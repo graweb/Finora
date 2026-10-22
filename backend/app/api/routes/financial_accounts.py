@@ -77,7 +77,7 @@ class BulkDuplicatePayload(BaseModel):
 
 def serialize_account(account: FinancialAccount) -> FinancialAccountResponse:
     paid_amount = sum((settlement.amount for settlement in account.settlements), Decimal("0"))
-    outstanding_amount = max(Decimal("0"), account.original_amount - paid_amount)
+    outstanding_amount = outstanding_balance(account)
     return FinancialAccountResponse(
         id=account.id,
         counterparty=account.counterparty,
@@ -87,7 +87,8 @@ def serialize_account(account: FinancialAccount) -> FinancialAccountResponse:
         original_amount=account.original_amount,
         due_on=account.due_on,
         status="settled"
-        if account.original_amount > 0 and outstanding_amount == 0
+        if account.status == "settled"
+        or (account.original_amount > 0 and outstanding_amount <= 0)
         else "open",
         paid_amount=paid_amount,
         outstanding_amount=outstanding_amount,
@@ -95,9 +96,15 @@ def serialize_account(account: FinancialAccount) -> FinancialAccountResponse:
     )
 
 
-def account_has_outstanding_balance(account: FinancialAccount) -> bool:
+def outstanding_balance(account: FinancialAccount) -> Decimal:
     paid_amount = sum((settlement.amount for settlement in account.settlements), Decimal("0"))
-    return account.original_amount == 0 or paid_amount < account.original_amount
+    return account.original_amount - paid_amount
+
+
+def account_has_outstanding_balance(account: FinancialAccount) -> bool:
+    if account.original_amount == 0:
+        return account.status != "settled"
+    return outstanding_balance(account) > 0
 
 
 def next_month(value: date) -> date:
@@ -198,9 +205,6 @@ def create_financial_account_settlement(
             detail="Esta conta já está quitada.",
         )
     paid_amount = sum((settlement.amount for settlement in account.settlements), Decimal("0"))
-    outstanding_amount = account.original_amount - paid_amount
-    if payload.amount > outstanding_amount:
-        raise HTTPException(status_code=422, detail="O abatimento excede o saldo da conta.")
 
     movement = FinancialMovement(
         movement_type="income" if account.account_type == "receivable" else "expense",
@@ -249,13 +253,10 @@ def settle_financial_accounts(
         - sum((settlement.amount for settlement in account.settlements), Decimal("0"))
         for account in accounts
     }
-    if any(balance <= 0 for balance in balances.values()):
-        raise HTTPException(
-            status_code=422,
-            detail="Não é possível quitar contas que já não possuem saldo pendente.",
-        )
-
     for account in accounts:
+        if balances[account.id] <= 0:
+            account.status = "settled"
+            continue
         movement = FinancialMovement(
             movement_type="income" if account.account_type == "receivable" else "expense",
             destination=account.destination,
@@ -307,7 +308,7 @@ def duplicate_financial_accounts(
             account_type=account.account_type,
             destination=account.destination,
             description=account.description,
-            original_amount=Decimal("0"),
+            original_amount=outstanding_balance(account),
             due_on=next_month(account.due_on),
             status="open",
         )
