@@ -27,13 +27,21 @@ def upgrade() -> None:
             "annual_dividend_yield", sa.Numeric(precision=8, scale=6), nullable=True
         ),
         sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("CURRENT_TIMESTAMP"),
             nullable=False,
         ),
     )
-    op.create_index("ix_investment_funds_ticker", "investment_funds", ["ticker"], unique=True)
+    op.create_index(
+        "ix_investment_funds_ticker", "investment_funds", ["ticker"], unique=True
+    )
 
 
 def downgrade() -> None:
