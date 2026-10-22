@@ -63,6 +63,10 @@ class BulkDeletePayload(BaseModel):
     ids: list[int] = Field(min_length=1)
 
 
+class FundsExplorerSyncPayload(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=5)
+
+
 class FundImportQueuedResponse(BaseModel):
     detail: str
     tickers: list[str]
@@ -130,6 +134,32 @@ def import_funds_from_explorer(tickers: list[str]) -> None:
         create_fund_from_explorer(ticker)
 
 
+def sync_fund_from_explorer(ticker: str) -> None:
+    try:
+        explorer_fund = fetch_fund(ticker, settings.funds_explorer_base_url)
+        with SessionLocal() as db:
+            fund = db.scalar(
+                select(InvestmentFund).where(InvestmentFund.ticker == ticker)
+            )
+            if fund is None:
+                logger.info("Funds Explorer sync skipped for missing FII %s", ticker)
+                return
+            fund.name = explorer_fund.name
+            fund.sector = explorer_fund.sector
+            fund.latest_price = explorer_fund.latest_price
+            fund.annual_dividend_yield = explorer_fund.annual_dividend_yield
+            db.commit()
+    except FundsExplorerError as error:
+        logger.warning("Funds Explorer sync failed for %s: %s", ticker, error)
+    except Exception:
+        logger.exception("Unexpected Funds Explorer sync failure for %s", ticker)
+
+
+def sync_funds_from_explorer(tickers: list[str]) -> None:
+    for ticker in tickers:
+        sync_fund_from_explorer(ticker)
+
+
 @router.post(
     "/import/funds-explorer",
     response_model=FundImportQueuedResponse,
@@ -161,6 +191,37 @@ def import_investment_funds_from_explorer(
             "em segundo plano."
         ),
         tickers=payload.tickers,
+        source="funds_explorer",
+    )
+
+
+@router.post(
+    "/sync/funds-explorer",
+    response_model=FundImportQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def sync_investment_funds_from_explorer(
+    payload: FundsExplorerSyncPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> FundImportQueuedResponse:
+    funds = list(
+        db.scalars(select(InvestmentFund).where(InvestmentFund.id.in_(payload.ids)))
+    )
+    if len(funds) != len(set(payload.ids)):
+        raise HTTPException(
+            status_code=404,
+            detail="Um ou mais fundos selecionados não foram encontrados.",
+        )
+
+    tickers = [fund.ticker for fund in funds]
+    background_tasks.add_task(sync_funds_from_explorer, tickers)
+    return FundImportQueuedResponse(
+        detail=(
+            f"Atualização de {len(tickers)} FII(s) agendada no Funds Explorer "
+            "em segundo plano."
+        ),
+        tickers=tickers,
         source="funds_explorer",
     )
 

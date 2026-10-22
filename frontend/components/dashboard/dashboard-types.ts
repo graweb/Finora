@@ -20,7 +20,8 @@ export const sectorColors: Record<string, string> = {
 export const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 export const currency = new Intl.NumberFormat("pt-BR", {

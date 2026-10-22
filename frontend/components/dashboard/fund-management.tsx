@@ -115,6 +115,8 @@ export function FundManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -252,6 +254,63 @@ export function FundManagement() {
     );
   }
 
+  function scheduleFundsReload() {
+    [3000, 12000, 30000, 60000, 80000].forEach((delay) => {
+      window.setTimeout(() => {
+        void loadFunds();
+      }, delay);
+    });
+  }
+
+  function requestFundsSync() {
+    if (selectedFundIds.length === 0) {
+      toast.error("Selecione pelo menos um FII para atualizar.");
+      return;
+    }
+    if (selectedFundIds.length > 5) {
+      toast.error("Selecione no máximo 5 FIIs para atualizar a cotação.");
+      return;
+    }
+    setIsSyncDialogOpen(true);
+  }
+
+  async function syncFunds() {
+    setIsSyncing(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${apiUrl}/investment-funds/sync/funds-explorer`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: selectedFundIds }),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.detail ?? "Não foi possível atualizar os FIIs.");
+      }
+      const result = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      setIsSyncDialogOpen(false);
+      toast.info(
+        result?.detail ??
+          "A atualização dos FIIs foi agendada em segundo plano.",
+      );
+      scheduleFundsReload();
+    } catch (syncError) {
+      const message =
+        syncError instanceof Error
+          ? syncError.message
+          : "Não foi possível atualizar os FIIs.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   async function importFund(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (importTickers.length === 0) {
@@ -281,11 +340,7 @@ export function FundManagement() {
         result?.detail ??
           "A consulta no Funds Explorer foi agendada em segundo plano.",
       );
-      [3000, 12000, 30000, 60000, 80000].forEach((delay) => {
-        window.setTimeout(() => {
-          void loadFunds();
-        }, delay);
-      });
+      scheduleFundsReload();
     } catch (importError) {
       const message =
         importError instanceof Error
@@ -366,7 +421,7 @@ export function FundManagement() {
   }
 
   return (
-    <section className="min-w-0 p-5 sm:p-7 lg:p-8">
+    <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
       <Card className="border-[#36366c] bg-[#222153] py-0 shadow-none">
         <CardContent className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -384,8 +439,7 @@ export function FundManagement() {
                 variant="outline"
                 size="sm"
                 className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={() => void loadFunds()}
-                disabled={isLoading}
+                onClick={requestFundsSync}
               >
                 <RefreshCw className="size-3.5" /> Atualizar
               </Button>
@@ -545,6 +599,32 @@ export function FundManagement() {
           />
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={isSyncDialogOpen}
+        onOpenChange={setIsSyncDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Atualizar cotação dos FIIs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Os valores de {selectedFundIds.length} FII(s) selecionado(s) serão
+              atualizados de acordo com a cotação atual. A consulta será executada
+              em segundo plano.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSyncing}>Cancelar</AlertDialogCancel>
+            <Button
+              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+              disabled={isSyncing}
+              onClick={() => void syncFunds()}
+            >
+              {isSyncing ? "Agendando..." : "Atualizar"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={isDeleteDialogOpen}

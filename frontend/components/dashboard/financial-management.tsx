@@ -508,7 +508,7 @@ export function FinancialManagement() {
   }
 
   return (
-    <section className="min-w-0 p-5 sm:p-7 lg:p-8">
+    <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
       <div className="mx-auto max-w-360">
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
           Controle financeiro

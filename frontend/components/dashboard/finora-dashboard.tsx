@@ -7,13 +7,14 @@ import { DashboardMetricCard } from "./dashboard-metric-card";
 import { money, type Fund } from "./dashboard-types";
 import { DashboardNavigation } from "./dashboard-navigation";
 import { FundTable } from "./fund-table";
+import { FundRecommendations } from "./fund-recommendations";
 import { IncomeTargetForm } from "./income-target-form";
-import { SimulatorSidebar } from "./simulator-sidebar";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function FinoraDashboard() {
-  const [desiredIncome, setDesiredIncome] = useState(12000);
+  const [desiredIncome, setDesiredIncome] = useState(100);
+  const [calculationVersion, setCalculationVersion] = useState(0);
   const [funds, setFunds] = useState<Omit<Fund, "weight">[]>([]);
   const [isLoadingFunds, setIsLoadingFunds] = useState(true);
   const [fundsError, setFundsError] = useState("");
@@ -58,7 +59,7 @@ export function FinoraDashboard() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [calculationVersion]);
   const income = Math.max(0, desiredIncome);
   const portfolioFunds = useMemo(
     () =>
@@ -92,13 +93,44 @@ export function FinoraDashboard() {
       ).sort((a, b) => b[1] - a[1]),
     [portfolioFunds],
   );
+  const recommendations = useMemo(() => {
+    const eligibleFunds = portfolioFunds.filter(
+      (fund) => fund.referencePrice > 0 && fund.annualYield > 0,
+    );
+    const highestYield = Math.max(
+      ...eligibleFunds.map((fund) => fund.annualYield),
+      0,
+    );
+    const fundsPerSector = eligibleFunds.reduce<Record<string, number>>(
+      (count, fund) => ({
+        ...count,
+        [fund.sector]: (count[fund.sector] ?? 0) + 1,
+      }),
+      {},
+    );
+
+    return eligibleFunds
+      .map((fund) => ({
+        ...fund,
+        score: Math.round(
+          (highestYield > 0 ? (fund.annualYield / highestYield) * 70 : 0) +
+            20 / fundsPerSector[fund.sector] +
+            10,
+        ),
+      }))
+      .sort((first, second) => second.score - first.score);
+  }, [portfolioFunds]);
 
   return (
     <main className="min-h-screen bg-[#181642] text-zinc-100">
       <DashboardNavigation activeView="dashboard" />
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] lg:pl-19.5">
-        <section className="min-w-0 p-5 sm:p-7 lg:p-8">
-          <IncomeTargetForm value={income} onChange={setDesiredIncome} />
+        <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
+          <IncomeTargetForm
+            value={income}
+            onChange={setDesiredIncome}
+            onCalculate={() => setCalculationVersion((version) => version + 1)}
+          />
           {isLoadingFunds ? (
             <p className="mt-4 text-sm text-zinc-400">Carregando carteira...</p>
           ) : null}
@@ -153,11 +185,9 @@ export function FinoraDashboard() {
             <FundTable capital={capital} funds={portfolioFunds} />
           </div>
         </section>
-        <SimulatorSidebar
-          capital={capital}
-          income={income}
-          funds={portfolioFunds}
-        />
+        <aside className="border-t border-[#343366] bg-[#242351] p-5 sm:p-7 lg:border-t-0 lg:border-l lg:p-7">
+          <FundRecommendations funds={recommendations} />
+        </aside>
       </div>
     </main>
   );

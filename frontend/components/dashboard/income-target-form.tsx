@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 export function IncomeTargetForm({
   value,
   onChange,
+  onCalculate,
 }: {
   value: number;
   onChange: (value: number) => void;
+  onCalculate: () => void;
 }) {
   return (
     <Card className="border-[#4b4990] bg-[#26245b] py-0 shadow-none">
@@ -36,7 +38,11 @@ export function IncomeTargetForm({
             aria-label="Renda mensal desejada"
             className="border-[#57549b] bg-[#1a1946] text-lg font-semibold text-white"
           />
-          <Button className="bg-violet-600 text-white hover:bg-violet-500">
+          <Button
+            type="button"
+            className="bg-violet-600 text-white hover:bg-violet-500"
+            onClick={onCalculate}
+          >
             Calcular
           </Button>
         </div>

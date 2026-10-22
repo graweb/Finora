@@ -1,6 +1,24 @@
+"use client";
+
 import { BarChart3, PieChart } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart as RechartsPieChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
+import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import { money, type Fund } from "./dashboard-types";
+
+const allocationChartConfig = {
+  allocation: { label: "Alocação", color: "#38bdf8" },
+};
 
 export function AllocationBars({
   funds,
@@ -9,7 +27,11 @@ export function AllocationBars({
   funds: Fund[];
   capital: number;
 }) {
-  const maximum = Math.max(...funds.map((fund) => fund.weight));
+  const data = funds.slice(0, 7).map((fund) => ({
+    ticker: fund.ticker.replace("11", ""),
+    allocation: fund.weight * 100,
+  }));
+
   return (
     <Card className="border-[#36366c] bg-[#222153] py-0 shadow-none">
       <CardContent className="p-5">
@@ -20,28 +42,52 @@ export function AllocationBars({
           </h2>
           <span className="text-xs text-zinc-400">Top posições</span>
         </div>
-        <div className="mt-5 flex h-40 items-end justify-between gap-2">
-          {funds.slice(0, 7).map((fund) => (
-            <div
-              className="flex h-full flex-1 flex-col items-center justify-end gap-2"
-              key={fund.ticker}
-            >
-              <span className="text-[10px] text-zinc-300">
-                {Math.round(fund.weight * 100)}%
-              </span>
-              <i
-                className="w-full max-w-8 rounded-t-md bg-linear-to-t from-violet-600 to-sky-400"
-                style={{ height: `${(fund.weight / maximum) * 112}px` }}
-              />
-              <span className="text-[10px] text-zinc-400">
-                {fund.ticker.replace("11", "")}
-              </span>
-            </div>
-          ))}
-        </div>
+        <ChartContainer
+          config={allocationChartConfig}
+          className="mt-5 h-48 w-full"
+        >
+          <BarChart data={data} margin={{ top: 8, right: 4, left: -20 }}>
+            <defs>
+              <linearGradient id="allocation-gradient" x1="0" x2="0" y1="1" y2="0">
+                <stop offset="0%" stopColor="#7c3aed" />
+                <stop offset="100%" stopColor="#38bdf8" />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="#3a3973" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              axisLine={false}
+              dataKey="ticker"
+              tick={{ fill: "#a1a1aa", fontSize: 11 }}
+              tickLine={false}
+            />
+            <YAxis
+              axisLine={false}
+              tick={{ fill: "#a1a1aa", fontSize: 10 }}
+              tickFormatter={(value) => `${value}%`}
+              tickLine={false}
+              width={34}
+            />
+            <Tooltip
+              content={
+                <ChartTooltipContent
+                  valueFormatter={(value) =>
+                    value.toLocaleString("pt-BR", {
+                      maximumFractionDigits: 1,
+                    }) + "%"
+                  }
+                />
+              }
+              cursor={{ fill: "#302e67", opacity: 0.45 }}
+            />
+            <Bar
+              dataKey="allocation"
+              fill="url(#allocation-gradient)"
+              radius={[5, 5, 0, 0]}
+            />
+          </BarChart>
+        </ChartContainer>
         <p className="mt-3 text-xs text-zinc-400">
-          Montante distribuído:{" "}
-          <b className="text-zinc-100">{money.format(capital)}</b>
+          Montante distribuído: <b className="text-zinc-100">{money.format(capital)}</b>
         </p>
       </CardContent>
     </Card>
@@ -49,20 +95,12 @@ export function AllocationBars({
 }
 
 export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
-  const coloredSectors = sectors.map(([name, share], index) => ({
-    name,
-    share,
+  const data = sectors.map(([name, share], index) => ({
+    sector: name,
+    allocation: share * 100,
     color: `hsl(${Math.round((index * 360) / sectors.length)} 82% 62%)`,
   }));
-  const gradient =
-    coloredSectors
-      .reduce((result, { color, share }, index) => {
-        const before = coloredSectors
-          .slice(0, index)
-          .reduce((sum, sector) => sum + sector.share, 0);
-        return `${result}${color} ${before * 100}% ${(before + share) * 100}%,`;
-      }, "conic-gradient(")
-      .slice(0, -1) + ")";
+
   return (
     <Card className="border-[#36366c] bg-[#222153] py-0 shadow-none">
       <CardContent className="p-5">
@@ -70,31 +108,73 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
           <PieChart className="size-4 text-sky-400" />
           Distribuição por setor
         </h2>
-        <div className="mt-5 flex items-center gap-7">
-          <div
-            className="grid size-44 shrink-0 place-items-center rounded-full"
-            style={{ background: gradient }}
+        <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
+          <ChartContainer
+            config={Object.fromEntries(
+              data.map((item) => [
+                item.sector,
+                { label: item.sector, color: item.color },
+              ]),
+            )}
+            className="size-44 shrink-0"
           >
-            <div className="grid size-28 place-items-center rounded-full bg-[#222153] text-center">
-              <b className="text-lg text-white">100%</b>
-              <span className="text-[10px] text-zinc-400">carteira</span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1 space-y-3 pl-2">
-            {coloredSectors.map(({ name, share, color }) => (
+            <RechartsPieChart>
+              <Tooltip
+                content={
+                  <ChartTooltipContent
+                    valueFormatter={(value) =>
+                      value.toLocaleString("pt-BR", {
+                        maximumFractionDigits: 1,
+                      }) + "%"
+                    }
+                  />
+                }
+              />
+              <Pie
+                data={data}
+                dataKey="allocation"
+                innerRadius={47}
+                nameKey="sector"
+                outerRadius={68}
+                paddingAngle={3}
+                stroke="none"
+              >
+                {data.map((item) => (
+                  <Cell fill={item.color} key={item.sector} />
+                ))}
+              </Pie>
+              <text
+                fill="white"
+                textAnchor="middle"
+                x="50%"
+                y="47%"
+                className="text-lg font-semibold"
+              >
+                100%
+              </text>
+              <text
+                fill="#a1a1aa"
+                textAnchor="middle"
+                x="50%"
+                y="60%"
+                className="text-[10px]"
+              >
+                carteira
+              </text>
+            </RechartsPieChart>
+          </ChartContainer>
+          <div className="min-w-0 flex-1 space-y-3 sm:pl-2">
+            {data.map(({ sector, allocation, color }) => (
               <div
                 className="flex items-center justify-between gap-4 text-xs"
-                key={name}
+                key={sector}
               >
                 <span className="flex items-center gap-2 text-zinc-300">
-                  <i
-                    className="size-2 rounded-full"
-                    style={{ background: color }}
-                  />
-                  {name}
+                  <i className="size-2 rounded-full" style={{ background: color }} />
+                  {sector}
                 </span>
                 <b className="text-zinc-100">
-                  {(share * 100).toLocaleString("pt-BR", {
+                  {allocation.toLocaleString("pt-BR", {
                     maximumFractionDigits: 1,
                   })}
                   %
