@@ -256,7 +256,7 @@ export function FinancialManagement() {
   const [reloadKey, setReloadKey] = useState(0);
   const [data, setData] = useState<AccountList>(emptyAccounts);
   const [totals, setTotals] = useState<Totals>(emptyTotals);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
@@ -331,7 +331,12 @@ export function FinancialManagement() {
         )
       : data.items;
   }, [data.items, search]);
-  const selected = data.items.find((item) => item.id === selectedId) ?? null;
+  const selected =
+    selectedIds.length === 1
+      ? data.items.find((item) => item.id === selectedIds[0]) ?? null
+      : null;
+  const allVisibleSelected =
+    accounts.length > 0 && accounts.every((account) => selectedIds.includes(account.id));
   const years = period
     ? Array.from({ length: 7 }, (_, index) => period.year - 3 + index)
     : [];
@@ -344,16 +349,18 @@ export function FinancialManagement() {
     setLoading(true);
     setView(value);
     setPage(1);
-    setSelectedId(null);
+    setSelectedIds([]);
     setExpandedId(null);
   };
   const changePage = (nextPage: number) => {
     setLoading(true);
     setPage(nextPage);
+    setSelectedIds([]);
   };
   const changePeriod = (year: number, month: number) => {
     setLoading(true);
     setPeriod({ year, month });
+    setSelectedIds([]);
   };
   const openCreate = () => {
     setEditing(null);
@@ -396,7 +403,7 @@ export function FinancialManagement() {
     setForm(emptyForm());
   };
   const openSettlement = (account: Account) => {
-    setSelectedId(account.id);
+    setSelectedIds([account.id]);
     setSettlementAmount("");
     setSettlementDate(new Date().toISOString().slice(0, 10));
     setError("");
@@ -483,20 +490,29 @@ export function FinancialManagement() {
       setSaving(false);
     }
   }
-  async function deleteAccount() {
-    if (!selected) return;
+  async function deleteAccounts() {
+    if (!selectedIds.length) return;
     setDeleting(true);
     try {
       const response = await fetch(
-        `${apiUrl}/financial-accounts/${selected.id}`,
-        { method: "DELETE" },
+        `${apiUrl}/financial-accounts`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: selectedIds }),
+        },
       );
       if (!response.ok) throw new Error("Não foi possível excluir a conta.");
       setDeleteOpen(false);
-      setSelectedId(null);
+      const deletedCount = selectedIds.length;
+      setSelectedIds([]);
       setExpandedId(null);
       reload();
-      toast.success("Conta excluída com sucesso.");
+      toast.success(
+        deletedCount === 1
+          ? "Conta excluída com sucesso."
+          : `${deletedCount} contas excluídas com sucesso.`,
+      );
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -636,7 +652,7 @@ export function FinancialManagement() {
                           variant="destructive"
                           size="icon-lg"
                           aria-label="Excluir conta"
-                          disabled={!selected}
+                          disabled={selectedIds.length === 0}
                           className="size-10"
                           onClick={() => setDeleteOpen(true)}
                         >
@@ -657,7 +673,19 @@ export function FinancialManagement() {
                   <thead className="text-xs font-bold text-zinc-300">
                     <tr>
                       <th className="w-10 px-4 py-4">
-                        <span className="sr-only">Selecionar</span>
+                        <input
+                          aria-label="Selecionar todas as contas visíveis"
+                          checked={allVisibleSelected}
+                          className="size-4 accent-sky-400"
+                          type="checkbox"
+                          onChange={() =>
+                            setSelectedIds(
+                              allVisibleSelected
+                                ? []
+                                : accounts.map((account) => account.id),
+                            )
+                          }
+                        />
                       </th>
                       <th className="w-10 px-4 py-4" />
                       <th className="px-3 py-4">Descrição</th>
@@ -695,15 +723,17 @@ export function FinancialManagement() {
                           key={account.id}
                           account={account}
                           expanded={expandedId === account.id}
-                          selected={selectedId === account.id}
+                          selected={selectedIds.includes(account.id)}
                           onToggle={() => {
                             setExpandedId(
                               expandedId === account.id ? null : account.id,
                             );
                           }}
                           onSelect={() =>
-                            setSelectedId(
-                              selectedId === account.id ? null : account.id,
+                            setSelectedIds((ids) =>
+                              ids.includes(account.id)
+                                ? ids.filter((id) => id !== account.id)
+                                : [...ids, account.id],
                             )
                           }
                           onSettle={() => openSettlement(account)}
@@ -728,10 +758,11 @@ export function FinancialManagement() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir conta?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Excluir {selectedIds.length === 1 ? "conta" : "contas"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação removerá a conta e seus abatimentos. As movimentações
-              geradas pelos abatimentos também serão removidas.
+              Esta ação removerá {selectedIds.length === 1 ? "a conta selecionada" : `as ${selectedIds.length} contas selecionadas`} e seus abatimentos. As movimentações geradas pelos abatimentos também serão removidas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -739,7 +770,7 @@ export function FinancialManagement() {
             <Button
               variant="destructive"
               disabled={deleting}
-              onClick={() => void deleteAccount()}
+              onClick={() => void deleteAccounts()}
             >
               {deleting ? "Excluindo..." : "Excluir"}
             </Button>

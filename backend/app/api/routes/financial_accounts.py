@@ -55,6 +55,10 @@ class FinancialAccountSettlementPayload(BaseModel):
     occurred_on: date
 
 
+class BulkDeletePayload(BaseModel):
+    ids: list[int] = Field(min_length=1)
+
+
 def serialize_account(account: FinancialAccount) -> FinancialAccountResponse:
     paid_amount = sum((settlement.amount for settlement in account.settlements), Decimal("0"))
     outstanding_amount = max(Decimal("0"), account.original_amount - paid_amount)
@@ -192,3 +196,36 @@ def delete_financial_account(account_id: int, db: Session = Depends(get_db)) -> 
             synchronize_session=False
         )
     db.commit()
+
+
+@router.delete("")
+def delete_financial_accounts(
+    payload: BulkDeletePayload, db: Session = Depends(get_db)
+) -> dict[str, int]:
+    account_ids = list(set(payload.ids))
+    accounts = list(
+        db.scalars(
+            select(FinancialAccount)
+            .where(FinancialAccount.id.in_(account_ids))
+            .options(selectinload(FinancialAccount.settlements))
+        )
+    )
+    if len(accounts) != len(account_ids):
+        raise HTTPException(
+            status_code=404,
+            detail="Uma ou mais contas não foram encontradas.",
+        )
+
+    movement_ids = [
+        settlement.financial_movement_id
+        for account in accounts
+        for settlement in account.settlements
+    ]
+    for account in accounts:
+        db.delete(account)
+    if movement_ids:
+        db.query(FinancialMovement).filter(FinancialMovement.id.in_(movement_ids)).delete(
+            synchronize_session=False
+        )
+    db.commit()
+    return {"deleted_count": len(accounts)}
