@@ -23,7 +23,18 @@ Crie o arquivo de configuração do backend a partir do exemplo:
 cp backend/.env.example backend/.env
 ```
 
-Preencha `BRAPI_TOKEN` em `backend/.env` para habilitar a importação de fundos pela BRAPI. As demais variáveis já possuem valores locais adequados para o Docker Compose.
+As demais variáveis já possuem valores locais adequados para o Docker Compose.
+
+### BRAPI: importação de FIIs
+
+Para importar FIIs, é necessário criar uma conta na [BRAPI](https://brapi.dev/), gerar um token de acesso e configurá-lo no arquivo `backend/.env`:
+
+```env
+BRAPI_TOKEN=seu_token_da_brapi
+BRAPI_FII_LIST_URL=https://brapi.dev/api/v2/fii/list
+```
+
+Não versione o token. O arquivo `backend/.env` já está ignorado pelo Git.
 
 ### Subir o projeto
 
