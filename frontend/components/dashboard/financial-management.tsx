@@ -91,17 +91,6 @@ const emptyForm = (): AccountForm => ({
 });
 const date = (value: string) =>
   new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-const nextMonth = (value: string) => {
-  const currentDate = new Date(`${value}T00:00:00`);
-  const nextDate = new Date(
-    currentDate.getFullYear(),
-    currentDate.getMonth() + 2,
-    0,
-  );
-  nextDate.setDate(Math.min(currentDate.getDate(), nextDate.getDate()));
-  return nextDate.toISOString().slice(0, 10);
-};
-
 function Pill({ destination }: { destination: Destination }) {
   return (
     <span
@@ -263,11 +252,12 @@ export function FinancialManagement() {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
-  const [duplicating, setDuplicating] = useState(false);
   const [form, setForm] = useState<AccountForm>(emptyForm);
   const [settlementOpen, setSettlementOpen] = useState(false);
   const [settlementAmount, setSettlementAmount] = useState("");
   const [settlementDate, setSettlementDate] = useState("");
+  const [bulkSettlementOpen, setBulkSettlementOpen] = useState(false);
+  const [bulkSettlementDate, setBulkSettlementDate] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -335,6 +325,13 @@ export function FinancialManagement() {
     selectedIds.length === 1
       ? data.items.find((item) => item.id === selectedIds[0]) ?? null
       : null;
+  const selectedAccounts = data.items.filter((account) =>
+    selectedIds.includes(account.id),
+  );
+  const canSettleSelected =
+    selectedAccounts.length === selectedIds.length &&
+    selectedAccounts.length > 0 &&
+    selectedAccounts.every((account) => account.status === "open");
   const allVisibleSelected =
     accounts.length > 0 && accounts.every((account) => selectedIds.includes(account.id));
   const years = period
@@ -364,14 +361,12 @@ export function FinancialManagement() {
   };
   const openCreate = () => {
     setEditing(null);
-    setDuplicating(false);
     setForm({ ...emptyForm(), dueOn: new Date().toISOString().slice(0, 10) });
     setError("");
     setFormOpen(true);
   };
   const openEdit = (account: Account) => {
     setEditing(account);
-    setDuplicating(false);
     setForm({
       accountType: account.account_type,
       destination: account.destination,
@@ -382,24 +377,42 @@ export function FinancialManagement() {
     setError("");
     setFormOpen(true);
   };
-  const duplicateAccount = () => {
-    if (!selected) return;
-    setEditing(null);
-    setDuplicating(true);
-    setForm({
-      accountType: selected.account_type,
-      destination: selected.destination,
-      description: selected.description,
-      originalAmount: selected.original_amount.toString(),
-      dueOn: nextMonth(selected.due_on),
-    });
+  async function duplicateAccounts() {
+    if (!selectedIds.length) return;
+    setSaving(true);
     setError("");
-    setFormOpen(true);
-  };
+    try {
+      const response = await fetch(`${apiUrl}/financial-accounts/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.detail ??
+            "Não foi possível duplicar as contas.",
+        );
+      const duplicatedCount = selectedIds.length;
+      setSelectedIds([]);
+      reload();
+      toast.success(
+        duplicatedCount === 1
+          ? "Conta duplicada para o próximo mês."
+          : `${duplicatedCount} contas duplicadas para o próximo mês.`,
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível duplicar as contas.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
   const closeForm = () => {
     setFormOpen(false);
     setEditing(null);
-    setDuplicating(false);
     setForm(emptyForm());
   };
   const openSettlement = (account: Account) => {
@@ -408,6 +421,16 @@ export function FinancialManagement() {
     setSettlementDate(new Date().toISOString().slice(0, 10));
     setError("");
     setSettlementOpen(true);
+  };
+  const openBulkSettlement = () => {
+    if (!selectedIds.length) return;
+    if (!canSettleSelected) {
+      toast.error("Uma ou mais contas selecionadas já foram quitadas.");
+      return;
+    }
+    setBulkSettlementDate(new Date().toISOString().slice(0, 10));
+    setError("");
+    setBulkSettlementOpen(true);
   };
 
   async function saveAccount(event: FormEvent<HTMLFormElement>) {
@@ -441,9 +464,7 @@ export function FinancialManagement() {
       toast.success(
         editing
           ? "Conta atualizada com sucesso."
-          : duplicating
-            ? "Conta duplicada com sucesso."
-            : "Conta criada com sucesso.",
+          : "Conta criada com sucesso.",
       );
     } catch (reason) {
       setError(
@@ -477,6 +498,13 @@ export function FinancialManagement() {
           (await response.json().catch(() => null))?.detail ??
             "Não foi possível registrar o abatimento.",
         );
+      const updatedAccount = (await response.json()) as Account;
+      setData((currentData) => ({
+        ...currentData,
+        items: currentData.items.map((account) =>
+          account.id === updatedAccount.id ? updatedAccount : account,
+        ),
+      }));
       setSettlementOpen(false);
       reload();
       toast.success("Abatimento registrado com sucesso.");
@@ -521,6 +549,55 @@ export function FinancialManagement() {
       );
     } finally {
       setDeleting(false);
+    }
+  }
+  async function settleAccounts(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSettleSelected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/financial-accounts/settle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedIds,
+          occurred_on: bulkSettlementDate,
+        }),
+      });
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.detail ??
+            "Não foi possível quitar as contas.",
+        );
+      const updatedAccounts = (await response.json()) as Account[];
+      const accountsById = new Map(
+        updatedAccounts.map((account) => [account.id, account]),
+      );
+      setData((currentData) => ({
+        ...currentData,
+        items: currentData.items.map(
+          (account) => accountsById.get(account.id) ?? account,
+        ),
+      }));
+      const settledCount = selectedIds.length;
+      setBulkSettlementOpen(false);
+      setSelectedIds([]);
+      setExpandedId(null);
+      reload();
+      toast.success(
+        settledCount === 1
+          ? "Conta quitada com sucesso."
+          : `${settledCount} contas quitadas com sucesso.`,
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível quitar as contas.",
+      );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -623,14 +700,14 @@ export function FinancialManagement() {
                           <Plus />
                         </Button>
                       </ActionTooltip>
-                      <ActionTooltip label="Duplicar conta">
+                      <ActionTooltip label="Duplicar contas selecionadas">
                         <Button
                           variant="outline"
                           size="icon-lg"
-                          aria-label="Duplicar conta"
-                          disabled={!selected}
+                          aria-label="Duplicar contas selecionadas"
+                          disabled={selectedIds.length === 0 || saving}
                           className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                          onClick={duplicateAccount}
+                          onClick={() => void duplicateAccounts()}
                         >
                           <Copy />
                         </Button>
@@ -640,11 +717,23 @@ export function FinancialManagement() {
                           variant="outline"
                           size="icon-lg"
                           aria-label="Editar conta"
-                          disabled={!selected}
+                          disabled={!selected || selected.status === "settled"}
                           className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
                           onClick={() => selected && openEdit(selected)}
                         >
                           <Edit3 />
+                        </Button>
+                      </ActionTooltip>
+                      <ActionTooltip label="Quitar contas selecionadas">
+                        <Button
+                          variant="outline"
+                          size="icon-lg"
+                          aria-label="Quitar contas selecionadas"
+                          disabled={selectedIds.length === 0}
+                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                          onClick={openBulkSettlement}
+                        >
+                          <Landmark />
                         </Button>
                       </ActionTooltip>
                       <ActionTooltip label="Excluir conta">
@@ -652,7 +741,7 @@ export function FinancialManagement() {
                           variant="destructive"
                           size="icon-lg"
                           aria-label="Excluir conta"
-                          disabled={selectedIds.length === 0}
+                          disabled={!canSettleSelected}
                           className="size-10"
                           onClick={() => setDeleteOpen(true)}
                         >
@@ -673,19 +762,21 @@ export function FinancialManagement() {
                   <thead className="text-xs font-bold text-zinc-300">
                     <tr>
                       <th className="w-10 px-4 py-4">
-                        <input
-                          aria-label="Selecionar todas as contas visíveis"
-                          checked={allVisibleSelected}
-                          className="size-4 accent-sky-400"
-                          type="checkbox"
-                          onChange={() =>
-                            setSelectedIds(
-                              allVisibleSelected
-                                ? []
-                                : accounts.map((account) => account.id),
-                            )
-                          }
-                        />
+                        {accounts.length ? (
+                          <input
+                            aria-label="Selecionar todas as contas visíveis"
+                            checked={allVisibleSelected}
+                            className="size-4 accent-sky-400"
+                            type="checkbox"
+                            onChange={() =>
+                              setSelectedIds(
+                                allVisibleSelected
+                                  ? []
+                                  : accounts.map((account) => account.id),
+                              )
+                            }
+                          />
+                        ) : null}
                       </th>
                       <th className="w-10 px-4 py-4" />
                       <th className="px-3 py-4">Descrição</th>
@@ -784,7 +875,6 @@ export function FinancialManagement() {
           saving={saving}
           error={error}
           editing={Boolean(editing)}
-          duplicating={duplicating}
           onClose={closeForm}
           onSubmit={saveAccount}
         />
@@ -800,6 +890,17 @@ export function FinancialManagement() {
           error={error}
           onClose={() => setSettlementOpen(false)}
           onSubmit={saveSettlement}
+        />
+      ) : null}
+      {bulkSettlementOpen ? (
+        <BulkSettlementModal
+          accounts={selectedAccounts}
+          valueDate={bulkSettlementDate}
+          setDate={setBulkSettlementDate}
+          saving={saving}
+          error={error}
+          onClose={() => setBulkSettlementOpen(false)}
+          onSubmit={settleAccounts}
         />
       ) : null}
     </section>
@@ -849,12 +950,7 @@ function AccountRow({
           </Button>
         </td>
         <td className="px-3 py-4">
-          <button
-            className="text-left font-medium text-white"
-            onClick={onSelect}
-          >
-            {account.description}
-          </button>
+          <span className="font-medium text-white">{account.description}</span>
         </td>
         <td className="px-3 py-4">
           <Pill destination={account.destination} />
@@ -1069,7 +1165,6 @@ function AccountModal({
   saving,
   error,
   editing,
-  duplicating,
   onClose,
   onSubmit,
 }: {
@@ -1078,14 +1173,13 @@ function AccountModal({
   saving: boolean;
   error: string;
   editing: boolean;
-  duplicating: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <Modal
       title={
-        editing ? "Editar conta" : duplicating ? "Duplicar conta" : "Nova conta"
+        editing ? "Editar conta" : "Nova conta"
       }
       onClose={onClose}
     >
@@ -1255,6 +1349,68 @@ function SettlementModal({
             className="bg-sky-500 text-slate-950 hover:bg-sky-400"
           >
             {saving ? "Registrando..." : "Registrar pagamento"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function BulkSettlementModal({
+  accounts,
+  valueDate,
+  setDate,
+  saving,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  accounts: Account[];
+  valueDate: string;
+  setDate: (value: string) => void;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isSingleAccount = accounts.length === 1;
+
+  return (
+    <Modal
+      title={isSingleAccount ? "Quitar conta" : "Quitar contas selecionadas"}
+      onClose={onClose}
+    >
+      <form className="grid gap-4" onSubmit={onSubmit}>
+        <p className="text-sm text-zinc-400">
+          {isSingleAccount
+            ? "A quitação registrará o saldo pendente desta conta."
+            : `A quitação registrará o saldo pendente das ${accounts.length} contas selecionadas.`}
+        </p>
+        <Field label="Data do pagamento">
+          <Input
+            required
+            type="date"
+            value={valueDate}
+            className="border-[#4a4880] bg-[#181642]"
+            onChange={(event) => setDate(event.target.value)}
+          />
+        </Field>
+        {error ? <p className="text-sm text-red-200">{error}</p> : null}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-white hover:bg-[#302e67] hover:text-white"
+            onClick={onClose}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+          >
+            {saving ? "Quitando..." : "Confirmar quitação"}
           </Button>
         </div>
       </form>
