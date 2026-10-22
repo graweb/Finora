@@ -284,7 +284,9 @@ export function FinancialManagement() {
     let live = true;
     const destination = view === "all" ? "" : `&destination=${view}`;
     Promise.all([
-      fetch(`${apiUrl}/financial-accounts?page=${page}&limit=10${destination}`),
+      fetch(
+        `${apiUrl}/financial-accounts?page=${page}&limit=10&year=${period.year}&month=${period.month}${destination}`,
+      ),
       fetch(
         `${apiUrl}/financial-movements?year=${period.year}&month=${period.month}&page=1&limit=1`,
       ),
@@ -329,8 +331,7 @@ export function FinancialManagement() {
         )
       : data.items;
   }, [data.items, search]);
-  const selected =
-    data.items.find((item) => item.id === selectedId) ?? accounts[0] ?? null;
+  const selected = data.items.find((item) => item.id === selectedId) ?? null;
   const years = period
     ? Array.from({ length: 7 }, (_, index) => period.year - 3 + index)
     : [];
@@ -535,7 +536,7 @@ export function FinancialManagement() {
           <MetricGroup destination="fisica" totals={totals.fisica} />
           <MetricGroup destination="juridica" totals={totals.juridica} />
         </div>
-        <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_22.5rem]">
+        <div className="mt-5">
           <Card className="border-[#3a3973] bg-[#222153] py-0 shadow-none">
             <CardContent className="p-0">
               <div className="border-b border-[#3a3973] p-5">
@@ -655,6 +656,9 @@ export function FinancialManagement() {
                 <table className="w-full min-w-245 text-left text-sm">
                   <thead className="text-xs font-bold text-zinc-300">
                     <tr>
+                      <th className="w-10 px-4 py-4">
+                        <span className="sr-only">Selecionar</span>
+                      </th>
                       <th className="w-10 px-4 py-4" />
                       <th className="px-3 py-4">Descrição</th>
                       <th className="px-3 py-4">Tipo de pessoa</th>
@@ -664,7 +668,6 @@ export function FinancialManagement() {
                       <th className="px-3 py-4 text-right">Pago</th>
                       <th className="px-3 py-4 text-right">Saldo</th>
                       <th className="px-3 py-4">Status</th>
-                      <th className="w-18 px-3 py-4" />
                     </tr>
                   </thead>
                   <tbody>
@@ -697,14 +700,12 @@ export function FinancialManagement() {
                             setExpandedId(
                               expandedId === account.id ? null : account.id,
                             );
-                            setSelectedId(account.id);
                           }}
-                          onSelect={() => setSelectedId(account.id)}
-                          onEdit={() => openEdit(account)}
-                          onDelete={() => {
-                            setSelectedId(account.id);
-                            setDeleteOpen(true);
-                          }}
+                          onSelect={() =>
+                            setSelectedId(
+                              selectedId === account.id ? null : account.id,
+                            )
+                          }
                           onSettle={() => openSettlement(account)}
                         />
                       ))
@@ -722,10 +723,6 @@ export function FinancialManagement() {
               </div>
             </CardContent>
           </Card>
-          <Summary
-            account={selected}
-            onSettle={() => selected && openSettlement(selected)}
-          />
         </div>
       </div>
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -784,8 +781,6 @@ function AccountRow({
   selected,
   onToggle,
   onSelect,
-  onEdit,
-  onDelete,
   onSettle,
 }: {
   account: Account;
@@ -793,8 +788,6 @@ function AccountRow({
   selected: boolean;
   onToggle: () => void;
   onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
   onSettle: () => void;
 }) {
   return (
@@ -802,6 +795,15 @@ function AccountRow({
       <tr
         className={`border-t border-[#39386a] transition-colors hover:bg-[#29275c]/45 ${selected ? "bg-[#25245b]" : ""}`}
       >
+        <td className="px-4 py-4">
+          <input
+            aria-label={`Selecionar ${account.description}`}
+            checked={selected}
+            className="size-4 accent-sky-400"
+            type="checkbox"
+            onChange={onSelect}
+          />
+        </td>
         <td className="px-4 py-4">
           <Button
             size="icon-xs"
@@ -850,71 +852,98 @@ function AccountRow({
             {account.status === "open" ? "Em aberto" : "Quitada"}
           </span>
         </td>
-        <td className="px-3 py-4">
-          <div className="flex gap-1">
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="Editar conta"
-              className="text-zinc-300 hover:bg-[#302e67] hover:text-white"
-              onClick={onEdit}
-            >
-              <Edit3 />
-            </Button>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="Excluir conta"
-              className="text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
-              onClick={onDelete}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        </td>
       </tr>
       {expanded ? (
         <tr className="border-t border-[#39386a] bg-[#1d1c49]">
           <td colSpan={10} className="p-4">
-            <div className="rounded-lg border border-[#39386a] bg-[#181642] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="font-semibold text-white">Abatimentos</h3>
-                <Button
-                  disabled={account.status === "settled"}
-                  variant="outline"
-                  className="border-[#5a5796] bg-transparent text-white hover:bg-[#302e67] hover:text-white"
-                  onClick={onSettle}
-                >
-                  <Plus /> Registrar abatimento
-                </Button>
+            <div className="grid gap-4 lg:grid-cols-[minmax(16rem,.75fr)_minmax(0,1.25fr)]">
+              <AccountDetails account={account} onSettle={onSettle} />
+              <div className="rounded-lg border border-[#39386a] bg-[#181642] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="font-semibold text-white">Abatimentos</h3>
+                  <Button
+                    disabled={account.status === "settled"}
+                    variant="outline"
+                    className="border-[#5a5796] bg-transparent text-white hover:bg-[#302e67] hover:text-white"
+                    onClick={onSettle}
+                  >
+                    <Plus /> Registrar abatimento
+                  </Button>
+                </div>
+                {account.settlements.length ? (
+                  <ul className="mt-4 space-y-3">
+                    {account.settlements.map((settlement) => (
+                      <li
+                        key={settlement.id}
+                        className="flex items-center gap-3 text-sm text-zinc-200"
+                      >
+                        <span className="size-2 rounded-full bg-sky-400" />
+                        Pagamento{" "}
+                        {account.account_type === "receivable"
+                          ? "recebido"
+                          : "realizado"}{" "}
+                        · {date(settlement.occurred_on)} ·{" "}
+                        {currency.format(settlement.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-zinc-400">
+                    Nenhum abatimento registrado.
+                  </p>
+                )}
               </div>
-              {account.settlements.length ? (
-                <ul className="mt-4 space-y-3">
-                  {account.settlements.map((settlement) => (
-                    <li
-                      key={settlement.id}
-                      className="flex items-center gap-3 text-sm text-zinc-200"
-                    >
-                      <span className="size-2 rounded-full bg-sky-400" />
-                      Pagamento{" "}
-                      {account.account_type === "receivable"
-                        ? "recebido"
-                        : "realizado"}{" "}
-                      · {date(settlement.occurred_on)} ·{" "}
-                      {currency.format(settlement.amount)}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-sm text-zinc-400">
-                  Nenhum abatimento registrado.
-                </p>
-              )}
             </div>
           </td>
         </tr>
       ) : null}
     </>
+  );
+}
+
+function AccountDetails({
+  account,
+  onSettle,
+}: {
+  account: Account;
+  onSettle: () => void;
+}) {
+  const progress = account.original_amount
+    ? Math.min(100, (account.paid_amount / account.original_amount) * 100)
+    : 0;
+
+  return (
+    <div className="rounded-lg border border-[#39386a] bg-[#181642] p-4">
+      <h3 className="text-lg font-semibold text-white">Resumo da conta</h3>
+      <div className="mt-4 flex items-center gap-2 text-sm text-zinc-400">
+        Tipo de pessoa: <Pill destination={account.destination} />
+      </div>
+      <p className="mt-4 text-sm font-medium text-white">
+        {Math.round(progress)}% pago
+      </p>
+      <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#45437a]">
+        <div
+          className="h-full rounded-full bg-sky-500"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-5 space-y-3 border-t border-[#39386a] pt-4 text-sm">
+        <Row label="Valor original" value={currency.format(account.original_amount)} />
+        <Row label="Pago" value={currency.format(account.paid_amount)} />
+        <Row
+          label="Saldo devedor"
+          value={currency.format(account.outstanding_amount)}
+          emphasis
+        />
+      </div>
+      <Button
+        disabled={account.status === "settled"}
+        className="mt-5 h-10 w-full bg-sky-500 text-slate-950 hover:bg-sky-400"
+        onClick={onSettle}
+      >
+        <Landmark /> Registrar pagamento
+      </Button>
+    </div>
   );
 }
 

@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
@@ -87,11 +87,17 @@ def get_account_or_404(account_id: int, db: Session) -> FinancialAccount:
 @router.get("", response_model=FinancialAccountListResponse)
 def list_financial_accounts(
     destination: Literal["fisica", "juridica"] | None = None,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> FinancialAccountListResponse:
     filters = [FinancialAccount.destination == destination] if destination else []
+    if year is not None:
+        filters.append(extract("year", FinancialAccount.due_on) == year)
+    if month is not None:
+        filters.append(extract("month", FinancialAccount.due_on) == month)
     total_items = db.scalar(select(func.count(FinancialAccount.id)).where(*filters)) or 0
     total_pages = max(1, (total_items + limit - 1) // limit)
     accounts = list(
