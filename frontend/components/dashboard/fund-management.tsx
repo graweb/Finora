@@ -111,6 +111,7 @@ export function FundManagement() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importTicker, setImportTicker] = useState("");
+  const [importTickers, setImportTickers] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -222,31 +223,76 @@ export function FundManagement() {
   function closeImport() {
     setIsImportOpen(false);
     setImportTicker("");
+    setImportTickers([]);
     setError("");
+  }
+
+  function addImportTicker() {
+    const ticker = importTicker.trim().toUpperCase();
+    if (!ticker) {
+      setError("Informe o ticker do FII para adicioná-lo à consulta.");
+      return;
+    }
+    if (importTickers.length >= 5) {
+      toast.error("Já existem 5 FIIs para serem consultados.");
+      return;
+    }
+    if (importTickers.includes(ticker)) {
+      toast.info(`O FII ${ticker} já foi adicionado à consulta.`);
+      return;
+    }
+    setImportTickers((tickers) => [...tickers, ticker]);
+    setImportTicker("");
+    setError("");
+  }
+
+  function removeImportTicker(ticker: string) {
+    setImportTickers((tickers) =>
+      tickers.filter((importedTicker) => importedTicker !== ticker),
+    );
   }
 
   async function importFund(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (importTickers.length === 0) {
+      setError("Adicione pelo menos um FII à consulta.");
+      return;
+    }
     setIsImporting(true);
     setError("");
     try {
       const response = await fetch(
-        `${apiUrl}/investment-funds/import/brapi/${encodeURIComponent(importTicker.trim())}`,
-        { method: "POST" },
+        `${apiUrl}/investment-funds/import/funds-explorer`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: importTickers }),
+        },
       );
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.detail ?? "Não foi possível importar o fundo.");
       }
+      const result = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
       closeImport();
-      await loadFunds();
-      toast.success("Fundo imobiliário importado com sucesso.");
+      toast.info(
+        result?.detail ??
+          "A consulta no Funds Explorer foi agendada em segundo plano.",
+      );
+      [3000, 12000, 30000, 60000, 80000].forEach((delay) => {
+        window.setTimeout(() => {
+          void loadFunds();
+        }, delay);
+      });
     } catch (importError) {
-      setError(
+      const message =
         importError instanceof Error
           ? importError.message
-          : "Não foi possível importar o fundo.",
-      );
+          : "Não foi possível importar o fundo.";
+      setError(message);
+      toast.error(message);
     } finally {
       setIsImporting(false);
     }
@@ -279,11 +325,12 @@ export function FundManagement() {
       await loadFunds();
       toast.success(successMessage);
     } catch (saveError) {
-      setError(
+      const message =
         saveError instanceof Error
           ? saveError.message
-          : "Não foi possível salvar o fundo.",
-      );
+          : "Não foi possível salvar o fundo.";
+      setError(message);
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -351,7 +398,7 @@ export function FundManagement() {
                   setIsImportOpen(true);
                 }}
               >
-                <Download className="size-3.5" /> Importar brapi
+                <Download className="size-3.5" /> Importar FII
               </Button>
               <Button
                 size="sm"
@@ -390,7 +437,7 @@ export function FundManagement() {
             <Input
               value={search}
               placeholder="Buscar por ticker, nome ou setor"
-              className="border-[#4a4880] bg-[#181642] pl-9"
+              className="border-[#4a4880] bg-[#181642] pl-9 text-white placeholder:text-zinc-400"
               onChange={(event) => changeSearch(event.target.value)}
             />
           </div>
@@ -655,10 +702,10 @@ export function FundManagement() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">
-                    Importar fundo pela brapi
+                    Importar FIIs pelo Funds Explorer
                   </h2>
                   <p className="mt-1 text-sm text-zinc-400">
-                    Informe o ticker do FII, como HGLG11 ou MXRF11.
+                    Adicione até cinco tickers para consultar em segundo plano.
                   </p>
                 </div>
                 <Button
@@ -676,17 +723,50 @@ export function FundManagement() {
                 onSubmit={(event) => void importFund(event)}
               >
                 <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Ticker
-                  <Input
-                    required
-                    value={importTicker}
-                    placeholder="HGLG11"
-                    className="border-[#4a4880] bg-[#181642] uppercase"
-                    onChange={(event) =>
-                      setImportTicker(event.target.value.toUpperCase())
-                    }
-                  />
+                  Tickers
+                  <div className="flex gap-2">
+                    <Input
+                      value={importTicker}
+                      placeholder="Ex.: HGLG11"
+                      className="border-[#4a4880] bg-[#181642] uppercase text-white"
+                      onChange={(event) =>
+                        setImportTicker(event.target.value.toUpperCase())
+                      }
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      aria-label="Adicionar FII à consulta"
+                      className="shrink-0 bg-sky-500 text-slate-950 hover:bg-sky-400"
+                      onClick={addImportTicker}
+                    >
+                      <Plus />
+                    </Button>
+                  </div>
                 </label>
+                {importTickers.length > 0 ? (
+                  <div className="flex flex-wrap gap-2" aria-label="FIIs adicionados">
+                    {importTickers.map((ticker) => (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100"
+                        key={ticker}
+                      >
+                        {ticker}
+                        <button
+                          type="button"
+                          className="rounded-sm text-sky-200 hover:text-white"
+                          aria-label={`Remover ${ticker}`}
+                          onClick={() => removeImportTicker(ticker)}
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <p className="text-xs text-zinc-400">
+                  {importTickers.length} de 5 FIIs adicionados
+                </p>
                 {error ? <p className="text-sm text-red-200">{error}</p> : null}
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
@@ -702,7 +782,7 @@ export function FundManagement() {
                     className="bg-sky-500 text-slate-950 hover:bg-sky-400"
                     disabled={isImporting}
                   >
-                    {isImporting ? "Importando..." : "Importar"}
+                    {isImporting ? "Agendando..." : "Agendar consulta"}
                   </Button>
                 </div>
               </form>

@@ -1,17 +1,28 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+import logging
+import re
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
-from app.models.investment_fund import InvestmentFund
-from app.services.brapi import BrapiError, fetch_fund_quote
 from app.core.config import settings
+from app.db.session import SessionLocal, get_db
+from app.models.investment_fund import InvestmentFund
+from app.services.funds_explorer import FundsExplorerError, fetch_fund
 
 router = APIRouter(prefix="/investment-funds", tags=["investment-funds"])
+logger = logging.getLogger(__name__)
 
 
 class InvestmentFundPayload(BaseModel):
@@ -52,6 +63,33 @@ class BulkDeletePayload(BaseModel):
     ids: list[int] = Field(min_length=1)
 
 
+class FundImportQueuedResponse(BaseModel):
+    detail: str
+    tickers: list[str]
+    source: str
+
+
+class FundsExplorerImportPayload(BaseModel):
+    tickers: list[str] = Field(min_length=1, max_length=5)
+
+    @field_validator("tickers")
+    @classmethod
+    def normalize_tickers(cls, tickers: list[str]) -> list[str]:
+        normalized_tickers = list(
+            dict.fromkeys(ticker.strip().upper() for ticker in tickers if ticker.strip())
+        )
+        if not normalized_tickers:
+            raise ValueError("Informe ao menos um ticker.")
+        if len(normalized_tickers) > 5:
+            raise ValueError("Informe no máximo cinco tickers por importação.")
+        if any(
+            not re.fullmatch(r"[A-Z0-9]{1,10}", ticker)
+            for ticker in normalized_tickers
+        ):
+            raise ValueError("Informe tickers válidos, como HGLG11 ou MXRF11.")
+        return normalized_tickers
+
+
 def get_fund_or_404(fund_id: int, db: Session) -> InvestmentFund:
     fund = db.get(InvestmentFund, fund_id)
     if fund is None:
@@ -59,46 +97,72 @@ def get_fund_or_404(fund_id: int, db: Session) -> InvestmentFund:
     return fund
 
 
-@router.post("/import/brapi/{ticker}", response_model=InvestmentFundResponse)
-def import_investment_fund_from_brapi(
-    ticker: str, db: Session = Depends(get_db)
-) -> InvestmentFund:
-    if not settings.brapi_token:
-        raise HTTPException(
-            status_code=503,
-            detail="Configure BRAPI_TOKEN no backend para importar fundos.",
-        )
-
+def create_fund_from_explorer(ticker: str) -> None:
     try:
-        brapi_fund = fetch_fund_quote(
-            ticker,
-            settings.brapi_token,
-            settings.brapi_fii_list_url,
-        )
-    except BrapiError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        explorer_fund = fetch_fund(ticker, settings.funds_explorer_base_url)
+        with SessionLocal() as db:
+            fund = db.scalar(
+                select(InvestmentFund).where(
+                    InvestmentFund.ticker == explorer_fund.ticker
+                )
+            )
+            if fund is not None:
+                logger.info("Funds Explorer import skipped for existing FII %s", ticker)
+                return
 
-    fund = db.scalar(
-        select(InvestmentFund).where(InvestmentFund.ticker == brapi_fund.ticker)
+            fund = InvestmentFund(
+                ticker=explorer_fund.ticker,
+                name=explorer_fund.name,
+                sector=explorer_fund.sector,
+                latest_price=explorer_fund.latest_price,
+                annual_dividend_yield=explorer_fund.annual_dividend_yield,
+            )
+            db.add(fund)
+            db.commit()
+    except FundsExplorerError as error:
+        logger.warning("Funds Explorer import failed for %s: %s", ticker, error)
+    except Exception:
+        logger.exception("Unexpected Funds Explorer import failure for %s", ticker)
+
+
+def import_funds_from_explorer(tickers: list[str]) -> None:
+    for ticker in tickers:
+        create_fund_from_explorer(ticker)
+
+
+@router.post(
+    "/import/funds-explorer",
+    response_model=FundImportQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def import_investment_funds_from_explorer(
+    payload: FundsExplorerImportPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> FundImportQueuedResponse:
+    existing_tickers = list(
+        db.scalars(
+            select(InvestmentFund.ticker).where(
+                InvestmentFund.ticker.in_(payload.tickers)
+            )
+        )
     )
-    if fund is None:
-        fund = InvestmentFund(
-            ticker=brapi_fund.ticker,
-            name=brapi_fund.name,
-            sector=brapi_fund.sector,
-            latest_price=brapi_fund.latest_price,
-            annual_dividend_yield=brapi_fund.annual_dividend_yield,
+    if existing_tickers:
+        tickers = ", ".join(existing_tickers)
+        raise HTTPException(
+            status_code=409,
+            detail=f"O FII {tickers} já está cadastrado na base.",
         )
-        db.add(fund)
-    else:
-        fund.name = brapi_fund.name
-        fund.sector = brapi_fund.sector
-        fund.latest_price = brapi_fund.latest_price
-        fund.annual_dividend_yield = brapi_fund.annual_dividend_yield
 
-    db.commit()
-    db.refresh(fund)
-    return fund
+    background_tasks.add_task(import_funds_from_explorer, payload.tickers)
+    return FundImportQueuedResponse(
+        detail=(
+            f"Consulta de {len(payload.tickers)} FII(s) agendada no Funds Explorer "
+            "em segundo plano."
+        ),
+        tickers=payload.tickers,
+        source="funds_explorer",
+    )
 
 
 @router.get("", response_model=InvestmentFundListResponse)
@@ -159,6 +223,15 @@ def create_investment_fund(
 ) -> InvestmentFund:
     fund_data = payload.model_dump()
     fund_data["ticker"] = payload.ticker.upper()
+    existing_fund = db.scalar(
+        select(InvestmentFund).where(InvestmentFund.ticker == fund_data["ticker"])
+    )
+    if existing_fund is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"O FII {fund_data['ticker']} já está cadastrado na base.",
+        )
+
     fund = InvestmentFund(**fund_data)
     db.add(fund)
     try:
@@ -166,7 +239,8 @@ def create_investment_fund(
     except IntegrityError as error:
         db.rollback()
         raise HTTPException(
-            status_code=409, detail="Já existe um fundo com este ticker."
+            status_code=409,
+            detail=f"O FII {fund_data['ticker']} já está cadastrado na base.",
         ) from error
     db.refresh(fund)
     return fund

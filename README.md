@@ -7,7 +7,7 @@ Aplicação para acompanhamento de FIIs e controle financeiro de pessoa física 
 - Frontend: Next.js, React, Tailwind CSS e componentes shadcn/ui.
 - Backend: FastAPI, SQLAlchemy e Alembic.
 - Banco de dados: PostgreSQL.
-- Integração de FIIs: BRAPI.
+- Importação de FIIs: crawler do Funds Explorer.
 
 ## Configuração local
 
@@ -25,16 +25,15 @@ cp backend/.env.example backend/.env
 
 As demais variáveis já possuem valores locais adequados para o Docker Compose.
 
-### BRAPI: importação de FIIs
+### Importação pelo Funds Explorer
 
-Para importar FIIs, é necessário criar uma conta na [BRAPI](https://brapi.dev/), gerar um token de acesso e configurá-lo no arquivo `backend/.env`:
+O sistema consulta o Funds Explorer por meio de um crawler executado em segundo plano. A importação aceita até cinco tickers por vez e salva os dados encontrados na base local. O endereço-base pode ser alterado em `backend/.env`:
 
 ```env
-BRAPI_TOKEN=seu_token_da_brapi
-BRAPI_FII_LIST_URL=https://brapi.dev/api/v2/fii/list
+FUNDS_EXPLORER_BASE_URL=https://www.fundsexplorer.com.br
 ```
 
-Não versione o token. O arquivo `backend/.env` já está ignorado pelo Git.
+Não é necessário configurar token de API para importar FIIs.
 
 ### Subir o projeto
 

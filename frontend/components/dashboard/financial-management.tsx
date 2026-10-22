@@ -588,7 +588,7 @@ export function FinancialManagement() {
                   <div className="relative min-w-0 flex-1">
                     <Search className="pointer-events-none absolute left-3 top-3 size-4 text-zinc-500" />
                     <Input
-                      className="h-10 border-[#4a4880] bg-[#181642] pl-9"
+                      className="h-10 border-[#4a4880] bg-[#181642] pl-9 text-white placeholder:text-zinc-400"
                       placeholder="Buscar por pessoa ou descrição..."
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}

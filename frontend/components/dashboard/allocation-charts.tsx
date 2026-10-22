@@ -1,6 +1,6 @@
 import { BarChart3, PieChart } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { money, sectorColors, type Fund } from "./dashboard-types";
+import { money, type Fund } from "./dashboard-types";
 
 export function AllocationBars({
   funds,
@@ -49,13 +49,18 @@ export function AllocationBars({
 }
 
 export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
+  const coloredSectors = sectors.map(([name, share], index) => ({
+    name,
+    share,
+    color: `hsl(${Math.round((index * 360) / sectors.length)} 82% 62%)`,
+  }));
   const gradient =
-    sectors
-      .reduce((result, [name, share], index) => {
-        const before = sectors
+    coloredSectors
+      .reduce((result, { color, share }, index) => {
+        const before = coloredSectors
           .slice(0, index)
-          .reduce((sum, [, value]) => sum + value, 0);
-        return `${result}${sectorColors[name] ?? "#a1a1aa"} ${before * 100}% ${(before + share) * 100}%,`;
+          .reduce((sum, sector) => sum + sector.share, 0);
+        return `${result}${color} ${before * 100}% ${(before + share) * 100}%,`;
       }, "conic-gradient(")
       .slice(0, -1) + ")";
   return (
@@ -76,7 +81,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
             </div>
           </div>
           <div className="min-w-0 flex-1 space-y-3 pl-2">
-            {sectors.map(([name, share]) => (
+            {coloredSectors.map(({ name, share, color }) => (
               <div
                 className="flex items-center justify-between gap-4 text-xs"
                 key={name}
@@ -84,7 +89,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                 <span className="flex items-center gap-2 text-zinc-300">
                   <i
                     className="size-2 rounded-full"
-                    style={{ background: sectorColors[name] ?? "#a1a1aa" }}
+                    style={{ background: color }}
                   />
                   {name}
                 </span>
