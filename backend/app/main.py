@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.financial_accounts import router as financial_accounts_router
 from app.api.routes.health import router as health_router
 from app.api.routes.financial_movements import router as financial_movements_router
 from app.api.routes.investment_funds import router as investment_funds_router
@@ -19,3 +20,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(investment_funds_router)
 app.include_router(financial_movements_router)
+app.include_router(financial_accounts_router)

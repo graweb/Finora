@@ -1,12 +1,6 @@
-import {
-  Calculator,
-  Home,
-  Layers3,
-  SlidersHorizontal,
-  WalletCards,
-} from "lucide-react";
+import { Calculator, Home, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 type DashboardView = "dashboard" | "funds" | "financial";
 
@@ -28,7 +22,7 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
               activeView === "dashboard" ? "text-sky-400" : "text-zinc-300",
           })}
         >
-          <Home />
+          <Home className="size-6" />
         </Link>
         <Link
           href="/fundos"
@@ -40,7 +34,7 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
               activeView === "funds" ? "text-sky-400" : "text-zinc-300",
           })}
         >
-          <WalletCards />
+          <WalletCards className="size-6" />
         </Link>
         <Link
           href="/movimentacoes"
@@ -52,14 +46,8 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
               activeView === "financial" ? "text-sky-400" : "text-zinc-300",
           })}
         >
-          <Calculator />
+          <Calculator className="size-6" />
         </Link>
-        <Button size="icon" variant="ghost">
-          <Layers3 />
-        </Button>
-        <Button size="icon" variant="ghost">
-          <SlidersHorizontal />
-        </Button>
       </div>
     </nav>
   );

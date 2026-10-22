@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str
     cors_origins: str = "http://localhost:3000"
+    brapi_token: str | None = None
+    brapi_fii_list_url: str = "https://brapi.dev/api/v2/fii/list"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

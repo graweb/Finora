@@ -1,6 +1,6 @@
 import { BarChart3, PieChart } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { money, sectorColors, type Fund } from "./dashboard-data";
+import { money, sectorColors, type Fund } from "./dashboard-types";
 
 export function AllocationBars({
   funds,
@@ -55,7 +55,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
         const before = sectors
           .slice(0, index)
           .reduce((sum, [, value]) => sum + value, 0);
-        return `${result}${sectorColors[name]} ${before * 100}% ${(before + share) * 100}%,`;
+        return `${result}${sectorColors[name] ?? "#a1a1aa"} ${before * 100}% ${(before + share) * 100}%,`;
       }, "conic-gradient(")
       .slice(0, -1) + ")";
   return (
@@ -84,7 +84,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                 <span className="flex items-center gap-2 text-zinc-300">
                   <i
                     className="size-2 rounded-full"
-                    style={{ background: sectorColors[name] }}
+                    style={{ background: sectorColors[name] ?? "#a1a1aa" }}
                   />
                   {name}
                 </span>

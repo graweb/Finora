@@ -1,12 +1,32 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Edit3, Plus, RefreshCw, Trash2, WalletCards, X } from "lucide-react";
+import {
+  Download,
+  Edit3,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  WalletCards,
+  X,
+} from "lucide-react";
 import { NumericFormat } from "react-number-format";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { currency } from "./dashboard-data";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { currency } from "./dashboard-types";
+import { TablePagination } from "./table-pagination";
 
 type InvestmentFund = {
   id: number;
@@ -25,6 +45,21 @@ type FundForm = {
   annualDividendYield: string;
 };
 
+type FundListResponse = {
+  items: InvestmentFund[];
+  pagination: {
+    page: number;
+    limit: number;
+    total_items: number;
+    total_pages: number;
+  };
+  totals: {
+    total_funds: number;
+    funds_with_price: number;
+    funds_with_dividend_yield: number;
+  };
+};
+
 const emptyForm: FundForm = {
   ticker: "",
   name: "",
@@ -34,6 +69,15 @@ const emptyForm: FundForm = {
 };
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const emptyFundData: FundListResponse = {
+  items: [],
+  pagination: { page: 1, limit: 10, total_items: 0, total_pages: 1 },
+  totals: {
+    total_funds: 0,
+    funds_with_price: 0,
+    funds_with_dividend_yield: 0,
+  },
+};
 
 function toForm(fund: InvestmentFund): FundForm {
   return {
@@ -58,24 +102,33 @@ function toPayload(form: FundForm) {
 }
 
 export function FundManagement() {
-  const [funds, setFunds] = useState<InvestmentFund[]>([]);
-  const [selectedFundId, setSelectedFundId] = useState<number | null>(null);
+  const [fundData, setFundData] = useState<FundListResponse>(emptyFundData);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [selectedFundIds, setSelectedFundIds] = useState<number[]>([]);
   const [form, setForm] = useState<FundForm>(emptyForm);
   const [editingFund, setEditingFund] = useState<InvestmentFund | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importTicker, setImportTicker] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
 
   async function loadFunds() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch(`${apiUrl}/investment-funds`);
+      const response = await fetch(
+        `${apiUrl}/investment-funds?page=${page}&limit=10&search=${encodeURIComponent(search.trim())}`,
+      );
       if (!response.ok) {
         throw new Error("Não foi possível carregar os fundos.");
       }
-      setFunds(await response.json());
+      setFundData(await response.json());
     } catch {
       setError("Não foi possível carregar os fundos da API.");
     } finally {
@@ -86,15 +139,17 @@ export function FundManagement() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch(`${apiUrl}/investment-funds`)
+    fetch(
+      `${apiUrl}/investment-funds?page=${page}&limit=10&search=${encodeURIComponent(search.trim())}`,
+    )
       .then(async (response) => {
         if (!response.ok) {
           throw new Error("Não foi possível carregar os fundos.");
         }
-        return response.json() as Promise<InvestmentFund[]>;
+        return response.json() as Promise<FundListResponse>;
       })
       .then((data) => {
-        if (isMounted) setFunds(data);
+        if (isMounted) setFundData(data);
       })
       .catch(() => {
         if (isMounted) setError("Não foi possível carregar os fundos da API.");
@@ -106,9 +161,42 @@ export function FundManagement() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [page, search]);
 
-  const selectedFund = funds.find((fund) => fund.id === selectedFundId) ?? null;
+  const funds = fundData.items;
+  const selectedFund =
+    selectedFundIds.length === 1
+      ? (funds.find((fund) => fund.id === selectedFundIds[0]) ?? null)
+      : null;
+
+  function toggleFundSelection(fundId: number) {
+    setSelectedFundIds((ids) =>
+      ids.includes(fundId)
+        ? ids.filter((id) => id !== fundId)
+        : [...ids, fundId],
+    );
+  }
+
+  function togglePageSelection() {
+    setSelectedFundIds((ids) =>
+      funds.every((fund) => ids.includes(fund.id))
+        ? []
+        : funds.map((fund) => fund.id),
+    );
+  }
+
+  function changePage(nextPage: number) {
+    setSelectedFundIds([]);
+    setIsLoading(true);
+    setPage(nextPage);
+  }
+
+  function changeSearch(value: string) {
+    setSearch(value);
+    setSelectedFundIds([]);
+    setPage(1);
+    setIsLoading(true);
+  }
 
   function openCreateForm() {
     setEditingFund(null);
@@ -131,8 +219,44 @@ export function FundManagement() {
     setForm(emptyForm);
   }
 
+  function closeImport() {
+    setIsImportOpen(false);
+    setImportTicker("");
+    setError("");
+  }
+
+  async function importFund(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsImporting(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${apiUrl}/investment-funds/import/brapi/${encodeURIComponent(importTicker.trim())}`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.detail ?? "Não foi possível importar o fundo.");
+      }
+      closeImport();
+      await loadFunds();
+      toast.success("Fundo imobiliário importado com sucesso.");
+    } catch (importError) {
+      setError(
+        importError instanceof Error
+          ? importError.message
+          : "Não foi possível importar o fundo.",
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   async function saveFund(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const successMessage = editingFund
+      ? "Fundo imobiliário atualizado com sucesso."
+      : "Fundo imobiliário criado com sucesso.";
     setIsSaving(true);
     setError("");
 
@@ -153,6 +277,7 @@ export function FundManagement() {
       }
       closeForm();
       await loadFunds();
+      toast.success(successMessage);
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -164,24 +289,32 @@ export function FundManagement() {
     }
   }
 
-  async function deleteFund() {
-    if (!selectedFund || !window.confirm(`Excluir ${selectedFund.ticker}?`))
-      return;
+  async function deleteFunds() {
+    if (selectedFundIds.length === 0) return;
+    const deletedCount = selectedFundIds.length;
+    setIsDeleting(true);
     setError("");
     try {
-      const response = await fetch(
-        `${apiUrl}/investment-funds/${selectedFund.id}`,
-        { method: "DELETE" },
-      );
+      const response = await fetch(`${apiUrl}/investment-funds`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedFundIds }),
+      });
       if (!response.ok) throw new Error("Não foi possível excluir o fundo.");
-      setSelectedFundId(null);
+      setSelectedFundIds([]);
+      setIsDeleteDialogOpen(false);
       await loadFunds();
+      toast.success(
+        `${deletedCount} fundo${deletedCount === 1 ? "" : "s"} excluído${deletedCount === 1 ? "" : "s"} com sucesso.`,
+      );
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
           ? deleteError.message
           : "Não foi possível excluir o fundo.",
       );
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -210,6 +343,17 @@ export function FundManagement() {
                 <RefreshCw className="size-3.5" /> Atualizar
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                onClick={() => {
+                  setError("");
+                  setIsImportOpen(true);
+                }}
+              >
+                <Download className="size-3.5" /> Importar brapi
+              </Button>
+              <Button
                 size="sm"
                 className="bg-sky-500 text-slate-950 hover:bg-sky-400"
                 onClick={openCreateForm}
@@ -228,8 +372,8 @@ export function FundManagement() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => void deleteFund()}
-                disabled={!selectedFund}
+                onClick={() => setIsDeleteDialogOpen(true)}
+                disabled={selectedFundIds.length === 0}
               >
                 <Trash2 className="size-3.5" /> Excluir
               </Button>
@@ -241,13 +385,36 @@ export function FundManagement() {
               {error}
             </p>
           ) : null}
+          <div className="relative mt-4 max-w-sm">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={search}
+              placeholder="Buscar por ticker, nome ou setor"
+              className="border-[#4a4880] bg-[#181642] pl-9"
+              onChange={(event) => changeSearch(event.target.value)}
+            />
+          </div>
+          <p className="mt-4 text-xs text-zinc-400">
+            {fundData.totals.total_funds} fundos cadastrados ·{" "}
+            {fundData.totals.funds_with_price} com cotação ·{" "}
+            {fundData.totals.funds_with_dividend_yield} com DY
+          </p>
 
           <div className="mt-5 overflow-x-auto rounded-lg border border-[#39386a]">
             <table className="w-full min-w-190 text-left text-sm">
               <thead className="bg-[#29275c] text-xs font-bold uppercase tracking-wider text-zinc-300">
                 <tr>
                   <th className="w-12 px-4 py-3" scope="col">
-                    <span className="sr-only">Selecionar</span>
+                    <input
+                      aria-label="Selecionar todos os fundos desta página"
+                      checked={
+                        funds.length > 0 &&
+                        funds.every((fund) => selectedFundIds.includes(fund.id))
+                      }
+                      className="size-4 accent-sky-400"
+                      type="checkbox"
+                      onChange={togglePageSelection}
+                    />
                   </th>
                   <th className="px-4 py-3" scope="col">
                     Ticker
@@ -294,11 +461,10 @@ export function FundManagement() {
                       <td className="px-4 py-3">
                         <input
                           aria-label={`Selecionar ${fund.ticker}`}
-                          checked={selectedFundId === fund.id}
+                          checked={selectedFundIds.includes(fund.id)}
                           className="size-4 accent-sky-400"
-                          type="radio"
-                          name="selected-fund"
-                          onChange={() => setSelectedFundId(fund.id)}
+                          type="checkbox"
+                          onChange={() => toggleFundSelection(fund.id)}
                         />
                       </td>
                       <td className="px-4 py-3 font-semibold text-white">
@@ -324,8 +490,41 @@ export function FundManagement() {
               </tbody>
             </table>
           </div>
+          <TablePagination
+            page={fundData.pagination.page}
+            totalPages={fundData.pagination.total_pages}
+            totalItems={fundData.pagination.total_items}
+            onPageChange={changePage}
+          />
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir fundos imobiliários?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação removerá {selectedFundIds.length} fundo(s)
+              selecionado(s) e não poderá ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>
+              Cancelar
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={() => void deleteFunds()}
+            >
+              {isDeleting ? "Excluindo..." : "Excluir"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isFormOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0e0d2c]/80 p-4">
@@ -442,6 +641,68 @@ export function FundManagement() {
                     disabled={isSaving}
                   >
                     {isSaving ? "Salvando..." : "Salvar"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+      {isImportOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0e0d2c]/80 p-4">
+          <Card className="w-full max-w-md border-[#4a4880] bg-[#222153] py-0 shadow-2xl">
+            <CardContent className="p-5 sm:p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Importar fundo pela brapi
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Informe o ticker do FII, como HGLG11 ou MXRF11.
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Fechar"
+                  className="text-white hover:bg-[#302e67] hover:text-white"
+                  onClick={closeImport}
+                >
+                  <X />
+                </Button>
+              </div>
+              <form
+                className="mt-5 space-y-4"
+                onSubmit={(event) => void importFund(event)}
+              >
+                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
+                  Ticker
+                  <Input
+                    required
+                    value={importTicker}
+                    placeholder="HGLG11"
+                    className="border-[#4a4880] bg-[#181642] uppercase"
+                    onChange={(event) =>
+                      setImportTicker(event.target.value.toUpperCase())
+                    }
+                  />
+                </label>
+                {error ? <p className="text-sm text-red-200">{error}</p> : null}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-white hover:bg-[#302e67] hover:text-white"
+                    onClick={closeImport}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+                    disabled={isImporting}
+                  >
+                    {isImporting ? "Importando..." : "Importar"}
                   </Button>
                 </div>
               </form>

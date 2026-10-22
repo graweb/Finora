@@ -1,11 +1,13 @@
-import { funds, money } from "./dashboard-data";
+import { money, type Fund } from "./dashboard-types";
 
 export function SimulatorSidebar({
   capital,
   income,
+  funds,
 }: {
   capital: number;
   income: number;
+  funds: Fund[];
 }) {
   return (
     <aside className="border-t border-[#343366] bg-[#242351] p-5 sm:p-7 lg:border-t-0 lg:border-l lg:p-7">
@@ -19,9 +21,9 @@ export function SimulatorSidebar({
           {money.format(capital)}
         </p>
         <p className="mt-3 text-xs leading-5 text-zinc-400">
-          Distribua o capital entre os 13 fundos de acordo com os pesos da
-          carteira para buscar uma renda estimada de {money.format(income)} por
-          mês.
+          Distribua o capital entre os {funds.length} fundos de acordo com os
+          pesos da carteira para buscar uma renda estimada de{" "}
+          {money.format(income)} por mês.
         </p>
       </div>
       <div className="mt-6 space-y-3">

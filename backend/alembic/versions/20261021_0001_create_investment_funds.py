@@ -42,8 +42,6 @@ def upgrade() -> None:
     op.create_index(
         "ix_investment_funds_ticker", "investment_funds", ["ticker"], unique=True
     )
-
-
 def downgrade() -> None:
     op.drop_index("ix_investment_funds_ticker", table_name="investment_funds")
     op.drop_table("investment_funds")

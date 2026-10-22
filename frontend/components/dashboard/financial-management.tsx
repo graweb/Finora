@@ -2,611 +2,1202 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
+  Building2,
+  ChevronDown,
+  Copy,
   Edit3,
+  Landmark,
   Plus,
-  RefreshCw,
+  Search,
   Trash2,
-  WalletCards,
+  UserRound,
   X,
 } from "lucide-react";
 import { NumericFormat } from "react-number-format";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { currency } from "./dashboard-data";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { currency } from "./dashboard-types";
+import { TablePagination } from "./table-pagination";
 
-type MovementType = "income" | "expense";
-type OwnerType = "graweb" | "personal";
-
-type FinancialMovement = {
+type Destination = "fisica" | "juridica";
+type AccountType = "receivable" | "payable";
+type View = "all" | Destination;
+type Account = {
   id: number;
-  movement_type: MovementType;
-  owner_type: OwnerType;
+  counterparty: string;
+  account_type: AccountType;
+  destination: Destination;
   description: string;
-  category: string | null;
-  amount: number;
-  occurred_on: string;
+  original_amount: number;
+  due_on: string;
+  status: "open" | "settled";
+  paid_amount: number;
+  outstanding_amount: number;
+  settlements: { id: number; amount: number; occurred_on: string }[];
 };
-
-type MovementForm = {
-  movementType: MovementType;
-  ownerType: OwnerType;
+type AccountList = {
+  items: Account[];
+  pagination: {
+    page: number;
+    limit: number;
+    total_items: number;
+    total_pages: number;
+  };
+};
+type Totals = {
+  fisica: { income: number; expense: number };
+  juridica: { income: number; expense: number };
+};
+type AccountForm = {
+  accountType: AccountType;
+  destination: Destination;
   description: string;
-  category: string;
-  amount: string;
-  occurredOn: string;
+  originalAmount: string;
+  dueOn: string;
 };
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const monthNames = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
-];
+const emptyAccounts: AccountList = {
+  items: [],
+  pagination: { page: 1, limit: 10, total_items: 0, total_pages: 1 },
+};
+const emptyTotals: Totals = {
+  fisica: { income: 0, expense: 0 },
+  juridica: { income: 0, expense: 0 },
+};
+const emptyForm = (): AccountForm => ({
+  accountType: "receivable",
+  destination: "fisica",
+  description: "",
+  originalAmount: "",
+  dueOn: "",
+});
+const date = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
+const nextMonth = (value: string) => {
+  const currentDate = new Date(`${value}T00:00:00`);
+  const nextDate = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + 2,
+    0,
+  );
+  nextDate.setDate(Math.min(currentDate.getDate(), nextDate.getDate()));
+  return nextDate.toISOString().slice(0, 10);
+};
 
-function createEmptyForm(occurredOn = ""): MovementForm {
-  return {
-    movementType: "income",
-    ownerType: "graweb",
-    description: "",
-    category: "",
-    amount: "",
-    occurredOn,
-  };
+function Pill({ destination }: { destination: Destination }) {
+  return (
+    <span
+      className={`inline-flex rounded-lg border px-2 py-1 text-xs font-medium ${destination === "fisica" ? "border-sky-400/60 bg-sky-400/10 text-sky-300" : "border-violet-400/60 bg-violet-400/10 text-violet-300"}`}
+    >
+      {destination === "fisica" ? "Física" : "Jurídica"}
+    </span>
+  );
 }
 
-function toForm(movement: FinancialMovement): MovementForm {
-  return {
-    movementType: movement.movement_type,
-    ownerType: movement.owner_type,
-    description: movement.description,
-    category: movement.category ?? "",
-    amount: movement.amount.toString(),
-    occurredOn: movement.occurred_on,
-  };
+function MetricGroup({
+  destination,
+  totals,
+}: {
+  destination: Destination;
+  totals: { income: number; expense: number };
+}) {
+  const physical = destination === "fisica";
+  const balance = totals.income - totals.expense;
+  return (
+    <Card className="border-[#3a3973] bg-[#222153] py-0 shadow-none">
+      <CardContent className="p-5">
+        <div className="flex items-center gap-3 text-xl font-semibold text-white">
+          <span
+            className={`grid size-11 place-items-center rounded-full ${physical ? "bg-sky-500/20 text-sky-400" : "bg-violet-500/20 text-violet-400"}`}
+          >
+            {physical ? (
+              <UserRound className="size-5" />
+            ) : (
+              <Building2 className="size-5" />
+            )}
+          </span>
+          Pessoa {physical ? "física" : "jurídica"}
+        </div>
+        <div className="mt-5 grid grid-cols-3 divide-x divide-[#45437a]">
+          <Metric
+            label="Receitas"
+            value={totals.income}
+            color="text-emerald-300"
+          />
+          <Metric
+            label="Despesas"
+            value={totals.expense}
+            color="text-rose-300"
+          />
+          <Metric
+            label="Saldo"
+            value={balance}
+            color={physical ? "text-sky-300" : "text-violet-300"}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
-function toPayload(form: MovementForm) {
-  return {
-    movement_type: form.movementType,
-    owner_type: form.ownerType,
-    description: form.description.trim(),
-    category: form.category.trim() || null,
-    amount: Number(form.amount),
-    occurred_on: form.occurredOn,
-  };
+function Metric({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div className="min-w-0 px-3 first:pl-0 last:pr-0">
+      <p className="text-xs text-zinc-400">{label}</p>
+      <p
+        className={`truncate pt-1 text-sm font-semibold sm:text-base ${color}`}
+      >
+        {currency.format(value)}
+      </p>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      className={`grid gap-1.5 text-sm font-medium text-zinc-200 ${className ?? ""}`}
+    >
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0e0d2c]/80 p-4">
+      <Card className="w-full max-w-xl border-[#4a4880] bg-[#222153] py-0 shadow-2xl">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Fechar"
+              className="text-white hover:bg-[#302e67] hover:text-white"
+              onClick={onClose}
+            >
+              <X />
+            </Button>
+          </div>
+          <div className="mt-5">{children}</div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ActionTooltip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function FinancialManagement() {
   const [period, setPeriod] = useState<{ year: number; month: number } | null>(
     null,
   );
+  const [view, setView] = useState<View>("all");
+  const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
-  const [movements, setMovements] = useState<FinancialMovement[]>([]);
-  const [selectedMovementId, setSelectedMovementId] = useState<number | null>(
-    null,
-  );
-  const [form, setForm] = useState<MovementForm>(createEmptyForm);
-  const [editingMovement, setEditingMovement] =
-    useState<FinancialMovement | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [data, setData] = useState<AccountList>(emptyAccounts);
+  const [totals, setTotals] = useState<Totals>(emptyTotals);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Account | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
+  const [form, setForm] = useState<AccountForm>(emptyForm);
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementDate, setSettlementDate] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const currentDate = new Date();
-      setPeriod({
-        year: currentDate.getFullYear(),
-        month: currentDate.getMonth() + 1,
-      });
+    const id = window.setTimeout(() => {
+      const now = new Date();
+      setPeriod({ year: now.getFullYear(), month: now.getMonth() + 1 });
     }, 0);
-
-    return () => window.clearTimeout(timer);
+    return () => window.clearTimeout(id);
   }, []);
-
   useEffect(() => {
     if (!period) return;
-    let isMounted = true;
-
-    fetch(
-      `${apiUrl}/financial-movements?year=${period.year}&month=${period.month}`,
-    )
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error("Não foi possível carregar as movimentações.");
-        return response.json() as Promise<FinancialMovement[]>;
+    let live = true;
+    const destination = view === "all" ? "" : `&destination=${view}`;
+    Promise.all([
+      fetch(`${apiUrl}/financial-accounts?page=${page}&limit=10${destination}`),
+      fetch(
+        `${apiUrl}/financial-movements?year=${period.year}&month=${period.month}&page=1&limit=1`,
+      ),
+    ])
+      .then(async ([accounts, movements]) => {
+        if (!accounts.ok || !movements.ok)
+          throw new Error("Não foi possível carregar o controle financeiro.");
+        return [
+          (await accounts.json()) as AccountList,
+          (await movements.json()) as { totals: Totals },
+        ] as const;
       })
-      .then((data) => {
-        if (isMounted) setMovements(data);
+      .then(([accounts, movements]) => {
+        if (live) {
+          setData(accounts);
+          setTotals(movements.totals);
+        }
       })
-      .catch(() => {
-        if (isMounted)
-          setError("Não foi possível carregar as movimentações da API.");
+      .catch((reason) => {
+        if (live)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Não foi possível carregar os dados.",
+          );
       })
       .finally(() => {
-        if (isMounted) setIsLoading(false);
+        if (live) setLoading(false);
       });
-
     return () => {
-      isMounted = false;
+      live = false;
     };
-  }, [period, reloadKey]);
+  }, [page, period, reloadKey, view]);
 
-  const selectedMovement =
-    movements.find((movement) => movement.id === selectedMovementId) ?? null;
-  const totals = useMemo(
-    () =>
-      movements.reduce(
-        (result, movement) => {
-          result[movement.owner_type][movement.movement_type] += Number(
-            movement.amount,
-          );
-          return result;
-        },
-        {
-          graweb: { income: 0, expense: 0 },
-          personal: { income: 0, expense: 0 },
-        },
-      ),
-    [movements],
-  );
-  const availableYears = period
+  const accounts = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("pt-BR");
+    return query
+      ? data.items.filter((item) =>
+          `${item.counterparty} ${item.description}`
+            .toLocaleLowerCase("pt-BR")
+            .includes(query),
+        )
+      : data.items;
+  }, [data.items, search]);
+  const selected =
+    data.items.find((item) => item.id === selectedId) ?? accounts[0] ?? null;
+  const years = period
     ? Array.from({ length: 7 }, (_, index) => period.year - 3 + index)
     : [];
-
-  function requestReload() {
-    setIsLoading(true);
+  const reload = () => {
+    setLoading(true);
     setError("");
     setReloadKey((value) => value + 1);
-  }
-
-  function changePeriod(nextYear: number, nextMonth: number) {
-    setIsLoading(true);
+  };
+  const setCurrentView = (value: View) => {
+    setLoading(true);
+    setView(value);
+    setPage(1);
+    setSelectedId(null);
+    setExpandedId(null);
+  };
+  const changePage = (nextPage: number) => {
+    setLoading(true);
+    setPage(nextPage);
+  };
+  const changePeriod = (year: number, month: number) => {
+    setLoading(true);
+    setPeriod({ year, month });
+  };
+  const openCreate = () => {
+    setEditing(null);
+    setDuplicating(false);
+    setForm({ ...emptyForm(), dueOn: new Date().toISOString().slice(0, 10) });
     setError("");
-    setSelectedMovementId(null);
-    setPeriod({ year: nextYear, month: nextMonth });
-  }
-
-  function openCreateForm() {
-    setEditingMovement(null);
-    setForm(createEmptyForm(new Date().toISOString().slice(0, 10)));
+    setFormOpen(true);
+  };
+  const openEdit = (account: Account) => {
+    setEditing(account);
+    setDuplicating(false);
+    setForm({
+      accountType: account.account_type,
+      destination: account.destination,
+      description: account.description,
+      originalAmount: account.original_amount.toString(),
+      dueOn: account.due_on,
+    });
     setError("");
-    setIsFormOpen(true);
-  }
-
-  function openEditForm() {
-    if (!selectedMovement) return;
-    setEditingMovement(selectedMovement);
-    setForm(toForm(selectedMovement));
+    setFormOpen(true);
+  };
+  const duplicateAccount = () => {
+    if (!selected) return;
+    setEditing(null);
+    setDuplicating(true);
+    setForm({
+      accountType: selected.account_type,
+      destination: selected.destination,
+      description: selected.description,
+      originalAmount: selected.original_amount.toString(),
+      dueOn: nextMonth(selected.due_on),
+    });
     setError("");
-    setIsFormOpen(true);
-  }
+    setFormOpen(true);
+  };
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditing(null);
+    setDuplicating(false);
+    setForm(emptyForm());
+  };
+  const openSettlement = (account: Account) => {
+    setSelectedId(account.id);
+    setSettlementAmount("");
+    setSettlementDate(new Date().toISOString().slice(0, 10));
+    setError("");
+    setSettlementOpen(true);
+  };
 
-  function closeForm() {
-    setIsFormOpen(false);
-    setEditingMovement(null);
-    setForm(createEmptyForm());
-  }
-
-  async function saveMovement(event: FormEvent<HTMLFormElement>) {
+  async function saveAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIsSaving(true);
+    setSaving(true);
     setError("");
     try {
       const response = await fetch(
-        editingMovement
-          ? `${apiUrl}/financial-movements/${editingMovement.id}`
-          : `${apiUrl}/financial-movements`,
+        editing
+          ? `${apiUrl}/financial-accounts/${editing.id}`
+          : `${apiUrl}/financial-accounts`,
         {
-          method: editingMovement ? "PUT" : "POST",
+          method: editing ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(toPayload(form)),
+          body: JSON.stringify({
+            account_type: form.accountType,
+            destination: form.destination,
+            description: form.description.trim(),
+            original_amount: Number(form.originalAmount),
+            due_on: form.dueOn,
+          }),
         },
       );
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
+      if (!response.ok)
         throw new Error(
-          body?.detail ?? "Não foi possível salvar a movimentação.",
+          (await response.json().catch(() => null))?.detail ??
+            "Não foi possível salvar a conta.",
         );
-      }
       closeForm();
-      requestReload();
-    } catch (saveError) {
+      reload();
+      toast.success(
+        editing
+          ? "Conta atualizada com sucesso."
+          : duplicating
+            ? "Conta duplicada com sucesso."
+            : "Conta criada com sucesso.",
+      );
+    } catch (reason) {
       setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Não foi possível salvar a movimentação.",
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível salvar a conta.",
       );
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   }
-
-  async function deleteMovement() {
-    if (
-      !selectedMovement ||
-      !window.confirm(`Excluir ${selectedMovement.description}?`)
-    )
-      return;
+  async function saveSettlement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setSaving(true);
     setError("");
     try {
       const response = await fetch(
-        `${apiUrl}/financial-movements/${selectedMovement.id}`,
-        { method: "DELETE" },
+        `${apiUrl}/financial-accounts/${selected.id}/settlements`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Number(settlementAmount),
+            occurred_on: settlementDate,
+          }),
+        },
       );
       if (!response.ok)
-        throw new Error("Não foi possível excluir a movimentação.");
-      setSelectedMovementId(null);
-      requestReload();
-    } catch (deleteError) {
+        throw new Error(
+          (await response.json().catch(() => null))?.detail ??
+            "Não foi possível registrar o abatimento.",
+        );
+      setSettlementOpen(false);
+      reload();
+      toast.success("Abatimento registrado com sucesso.");
+    } catch (reason) {
       setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Não foi possível excluir a movimentação.",
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível registrar o abatimento.",
       );
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function deleteAccount() {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/financial-accounts/${selected.id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("Não foi possível excluir a conta.");
+      setDeleteOpen(false);
+      setSelectedId(null);
+      setExpandedId(null);
+      reload();
+      toast.success("Conta excluída com sucesso.");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível excluir a conta.",
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
     <section className="min-w-0 p-5 sm:p-7 lg:p-8">
-      <Card className="border-[#36366c] bg-[#222153] py-0 shadow-none">
-        <CardContent className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h1 className="flex items-center gap-2 text-lg font-semibold text-white">
-                <WalletCards className="size-5 text-sky-400" /> Controle
-                financeiro
-              </h1>
-              <p className="mt-1 text-sm text-zinc-400">
-                Acompanhe suas entradas e saídas mensais.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <select
-                aria-label="Mês"
-                value={period?.month ?? ""}
-                disabled={!period}
-                onChange={(event) =>
-                  changePeriod(period?.year ?? 0, Number(event.target.value))
-                }
-                className="h-7 rounded-lg border border-[#4a4880] bg-[#181642] px-2 text-xs text-zinc-100 outline-none disabled:opacity-50"
-              >
-                {monthNames.map((name, index) => (
-                  <option key={name} value={index + 1}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Ano"
-                value={period?.year ?? ""}
-                disabled={!period}
-                onChange={(event) =>
-                  changePeriod(Number(event.target.value), period?.month ?? 1)
-                }
-                className="h-7 rounded-lg border border-[#4a4880] bg-[#181642] px-2 text-xs text-zinc-100 outline-none disabled:opacity-50"
-              >
-                {availableYears.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={requestReload}
-                disabled={isLoading}
-              >
-                <RefreshCw className="size-3.5" /> Atualizar
-              </Button>
-              <Button
-                size="sm"
-                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-                onClick={openCreateForm}
-              >
-                <Plus className="size-3.5" /> Adicionar
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={openEditForm}
-                disabled={!selectedMovement}
-              >
-                <Edit3 className="size-3.5" /> Editar
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => void deleteMovement()}
-                disabled={!selectedMovement}
-              >
-                <Trash2 className="size-3.5" /> Excluir
-              </Button>
-            </div>
-          </div>
-          {error && !isFormOpen ? (
-            <p className="mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
-              {error}
-            </p>
-          ) : null}
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3">
-              <p className="text-xs font-medium text-zinc-400">
-                Receitas Graweb
-              </p>
-              <p className="mt-1 font-semibold text-emerald-300">
-                {currency.format(totals.graweb.income)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-rose-400/20 bg-rose-400/5 p-3">
-              <p className="text-xs font-medium text-zinc-400">
-                Despesas Graweb
-              </p>
-              <p className="mt-1 font-semibold text-rose-300">
-                {currency.format(totals.graweb.expense)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3">
-              <p className="text-xs font-medium text-zinc-400">
-                Receitas Pessoal
-              </p>
-              <p className="mt-1 font-semibold text-emerald-300">
-                {currency.format(totals.personal.income)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-rose-400/20 bg-rose-400/5 p-3">
-              <p className="text-xs font-medium text-zinc-400">
-                Despesas Pessoal
-              </p>
-              <p className="mt-1 font-semibold text-rose-300">
-                {currency.format(totals.personal.expense)}
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 overflow-x-auto rounded-lg border border-[#39386a]">
-            <table className="w-full min-w-180 text-left text-sm">
-              <thead className="bg-[#29275c] text-xs font-bold uppercase tracking-wider text-zinc-300">
-                <tr>
-                  <th className="w-12 px-4 py-3">
-                    <span className="sr-only">Selecionar</span>
-                  </th>
-                  <th className="px-4 py-3">Data</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Origem</th>
-                  <th className="px-4 py-3">Descrição</th>
-                  <th className="px-4 py-3">Categoria</th>
-                  <th className="px-4 py-3 text-right">Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td
-                      className="px-4 py-8 text-center text-zinc-400"
-                      colSpan={7}
-                    >
-                      Carregando movimentações...
-                    </td>
-                  </tr>
-                ) : movements.length === 0 ? (
-                  <tr>
-                    <td
-                      className="px-4 py-8 text-center text-zinc-400"
-                      colSpan={7}
-                    >
-                      Nenhuma movimentação neste período.
-                    </td>
-                  </tr>
-                ) : (
-                  movements.map((movement) => (
-                    <tr
-                      key={movement.id}
-                      className="border-t border-[#39386a] text-zinc-200 transition-colors hover:bg-[#29275c]/45"
-                    >
-                      <td className="px-4 py-3">
-                        <input
-                          aria-label={`Selecionar ${movement.description}`}
-                          checked={selectedMovementId === movement.id}
-                          className="size-4 accent-sky-400"
-                          type="radio"
-                          name="selected-movement"
-                          onChange={() => setSelectedMovementId(movement.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        {new Date(
-                          `${movement.occurred_on}T00:00:00`,
-                        ).toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1.5 font-medium ${movement.movement_type === "income" ? "text-emerald-300" : "text-rose-300"}`}
-                        >
-                          {movement.movement_type === "income" ? (
-                            <ArrowDownLeft className="size-3.5" />
-                          ) : (
-                            <ArrowUpRight className="size-3.5" />
-                          )}
-                          {movement.movement_type === "income"
-                            ? "Entrada"
-                            : "Saída"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-zinc-100">
-                        {movement.owner_type === "graweb"
-                          ? "Graweb"
-                          : "Pessoal"}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-white">
-                        {movement.description}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-300">
-                        {movement.category ?? "—"}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-right font-medium ${movement.movement_type === "income" ? "text-emerald-300" : "text-rose-300"}`}
-                      >
-                        {currency.format(movement.amount)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-      {isFormOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0e0d2c]/80 p-4">
-          <Card className="w-full max-w-xl border-[#4a4880] bg-[#222153] py-0 shadow-2xl">
-            <CardContent className="p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">
-                  {editingMovement
-                    ? "Editar movimentação"
-                    : "Adicionar movimentação"}
+      <div className="mx-auto max-w-360">
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          Controle financeiro
+        </h1>
+        <div className="mt-5 inline-flex w-full max-w-175 rounded-xl border border-[#3a3973] bg-[#1b1947] p-1 sm:w-auto">
+          {(
+            [
+              ["all", "Visão consolidada"],
+              ["fisica", "Pessoa física"],
+              ["juridica", "Pessoa jurídica"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              variant="ghost"
+              className={`flex-1 px-5 ${view === value ? "bg-sky-500 text-slate-950 hover:bg-sky-400 hover:text-slate-950" : "text-zinc-300 hover:bg-[#302e67] hover:text-white"}`}
+              onClick={() => setCurrentView(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <MetricGroup destination="fisica" totals={totals.fisica} />
+          <MetricGroup destination="juridica" totals={totals.juridica} />
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_22.5rem]">
+          <Card className="border-[#3a3973] bg-[#222153] py-0 shadow-none">
+            <CardContent className="p-0">
+              <div className="border-b border-[#3a3973] p-5">
+                <h2 className="text-2xl font-semibold text-white">
+                  Contas a receber e a pagar
                 </h2>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Fechar"
-                  className="text-white hover:bg-[#302e67] hover:text-white"
-                  onClick={closeForm}
-                >
-                  <X />
-                </Button>
-              </div>
-              <form
-                className="mt-5 grid gap-4 sm:grid-cols-2"
-                onSubmit={(event) => void saveMovement(event)}
-              >
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Tipo
-                  <select
-                    value={form.movementType}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        movementType: event.target.value as MovementType,
-                      })
-                    }
-                    className="h-8 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm font-normal text-zinc-100 outline-none"
-                  >
-                    <option value="income">Entrada</option>
-                    <option value="expense">Saída</option>
-                  </select>
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Data
-                  <Input
-                    required
-                    type="date"
-                    value={form.occurredOn}
-                    className="border-[#4a4880] bg-[#181642]"
-                    onChange={(event) =>
-                      setForm({ ...form, occurredOn: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Origem
-                  <select
-                    value={form.ownerType}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        ownerType: event.target.value as OwnerType,
-                      })
-                    }
-                    className="h-8 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm font-normal text-zinc-100 outline-none"
-                  >
-                    <option value="graweb">Graweb</option>
-                    <option value="personal">Pessoal</option>
-                  </select>
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200 sm:col-span-2">
-                  Descrição
-                  <Input
-                    required
-                    maxLength={255}
-                    value={form.description}
-                    className="border-[#4a4880] bg-[#181642]"
-                    onChange={(event) =>
-                      setForm({ ...form, description: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Categoria
-                  <Input
-                    maxLength={100}
-                    value={form.category}
-                    className="border-[#4a4880] bg-[#181642]"
-                    onChange={(event) =>
-                      setForm({ ...form, category: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
-                  Valor
-                  <NumericFormat
-                    required
-                    customInput={Input}
-                    value={form.amount}
-                    thousandSeparator="."
-                    decimalSeparator=","
-                    decimalScale={2}
-                    fixedDecimalScale
-                    prefix="R$ "
-                    allowNegative={false}
-                    inputMode="decimal"
-                    className="border-[#4a4880] bg-[#181642]"
-                    onValueChange={({ floatValue }) =>
-                      setForm({ ...form, amount: floatValue?.toString() ?? "" })
-                    }
-                  />
-                </label>
-                {error ? (
-                  <p className="text-sm text-red-200 sm:col-span-2">{error}</p>
-                ) : null}
-                <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-white hover:bg-[#302e67] hover:text-white"
-                    onClick={closeForm}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-                    disabled={isSaving}
-                  >
-                    {isSaving ? "Salvando..." : "Salvar"}
-                  </Button>
+                <div className="mt-5 flex flex-col gap-3 lg:flex-row">
+                  <div className="flex gap-2">
+                    <select
+                      aria-label="Mês"
+                      value={period?.month ?? ""}
+                      disabled={!period}
+                      onChange={(event) =>
+                        changePeriod(
+                          period?.year ?? 2026,
+                          Number(event.target.value),
+                        )
+                      }
+                      className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
+                    >
+                      {Array.from({ length: 12 }, (_, index) =>
+                        new Intl.DateTimeFormat("pt-BR", {
+                          month: "long",
+                        }).format(new Date(2026, index, 1)),
+                      ).map((month, index) => (
+                        <option key={month} value={index + 1}>
+                          {month[0].toUpperCase() + month.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label="Ano"
+                      value={period?.year ?? ""}
+                      disabled={!period}
+                      onChange={(event) =>
+                        changePeriod(
+                          Number(event.target.value),
+                          period?.month ?? 1,
+                        )
+                      }
+                      className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
+                    >
+                      {years.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-3 size-4 text-zinc-500" />
+                    <Input
+                      className="h-10 border-[#4a4880] bg-[#181642] pl-9"
+                      placeholder="Buscar por pessoa ou descrição..."
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                    />
+                  </div>
+                  <TooltipProvider>
+                    <div className="flex flex-wrap gap-2">
+                      <ActionTooltip label="Nova conta">
+                        <Button
+                          size="icon-lg"
+                          aria-label="Nova conta"
+                          className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
+                          onClick={openCreate}
+                        >
+                          <Plus />
+                        </Button>
+                      </ActionTooltip>
+                      <ActionTooltip label="Duplicar conta">
+                        <Button
+                          variant="outline"
+                          size="icon-lg"
+                          aria-label="Duplicar conta"
+                          disabled={!selected}
+                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                          onClick={duplicateAccount}
+                        >
+                          <Copy />
+                        </Button>
+                      </ActionTooltip>
+                      <ActionTooltip label="Editar conta">
+                        <Button
+                          variant="outline"
+                          size="icon-lg"
+                          aria-label="Editar conta"
+                          disabled={!selected}
+                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                          onClick={() => selected && openEdit(selected)}
+                        >
+                          <Edit3 />
+                        </Button>
+                      </ActionTooltip>
+                      <ActionTooltip label="Excluir conta">
+                        <Button
+                          variant="destructive"
+                          size="icon-lg"
+                          aria-label="Excluir conta"
+                          disabled={!selected}
+                          className="size-10"
+                          onClick={() => setDeleteOpen(true)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </ActionTooltip>
+                    </div>
+                  </TooltipProvider>
                 </div>
-              </form>
+              </div>
+              {error ? (
+                <p className="mx-5 mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+                  {error}
+                </p>
+              ) : null}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-245 text-left text-sm">
+                  <thead className="text-xs font-bold text-zinc-300">
+                    <tr>
+                      <th className="w-10 px-4 py-4" />
+                      <th className="px-3 py-4">Descrição</th>
+                      <th className="px-3 py-4">Tipo de pessoa</th>
+                      <th className="px-3 py-4">Tipo</th>
+                      <th className="px-3 py-4">Vencimento</th>
+                      <th className="px-3 py-4 text-right">Valor original</th>
+                      <th className="px-3 py-4 text-right">Pago</th>
+                      <th className="px-3 py-4 text-right">Saldo</th>
+                      <th className="px-3 py-4">Status</th>
+                      <th className="w-18 px-3 py-4" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="px-4 py-12 text-center text-zinc-400"
+                        >
+                          Carregando contas...
+                        </td>
+                      </tr>
+                    ) : accounts.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="px-4 py-12 text-center text-zinc-400"
+                        >
+                          Nenhuma conta encontrada.
+                        </td>
+                      </tr>
+                    ) : (
+                      accounts.map((account) => (
+                        <AccountRow
+                          key={account.id}
+                          account={account}
+                          expanded={expandedId === account.id}
+                          selected={selectedId === account.id}
+                          onToggle={() => {
+                            setExpandedId(
+                              expandedId === account.id ? null : account.id,
+                            );
+                            setSelectedId(account.id);
+                          }}
+                          onSelect={() => setSelectedId(account.id)}
+                          onEdit={() => openEdit(account)}
+                          onDelete={() => {
+                            setSelectedId(account.id);
+                            setDeleteOpen(true);
+                          }}
+                          onSettle={() => openSettlement(account)}
+                        />
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-5 pb-4">
+                <TablePagination
+                  page={data.pagination.page}
+                  totalPages={data.pagination.total_pages}
+                  totalItems={data.pagination.total_items}
+                  onPageChange={changePage}
+                />
+              </div>
             </CardContent>
           </Card>
+          <Summary
+            account={selected}
+            onSettle={() => selected && openSettlement(selected)}
+          />
         </div>
+      </div>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir conta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação removerá a conta e seus abatimentos. As movimentações
+              geradas pelos abatimentos também serão removidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void deleteAccount()}
+            >
+              {deleting ? "Excluindo..." : "Excluir"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {formOpen ? (
+        <AccountModal
+          form={form}
+          setForm={setForm}
+          saving={saving}
+          error={error}
+          editing={Boolean(editing)}
+          duplicating={duplicating}
+          onClose={closeForm}
+          onSubmit={saveAccount}
+        />
+      ) : null}
+      {settlementOpen && selected ? (
+        <SettlementModal
+          account={selected}
+          amount={settlementAmount}
+          setAmount={setSettlementAmount}
+          valueDate={settlementDate}
+          setDate={setSettlementDate}
+          saving={saving}
+          error={error}
+          onClose={() => setSettlementOpen(false)}
+          onSubmit={saveSettlement}
+        />
       ) : null}
     </section>
+  );
+}
+
+function AccountRow({
+  account,
+  expanded,
+  selected,
+  onToggle,
+  onSelect,
+  onEdit,
+  onDelete,
+  onSettle,
+}: {
+  account: Account;
+  expanded: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSettle: () => void;
+}) {
+  return (
+    <>
+      <tr
+        className={`border-t border-[#39386a] transition-colors hover:bg-[#29275c]/45 ${selected ? "bg-[#25245b]" : ""}`}
+      >
+        <td className="px-4 py-4">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Exibir abatimentos"
+            className="text-zinc-300 hover:bg-[#302e67] hover:text-white"
+            onClick={onToggle}
+          >
+            <ChevronDown
+              className={`size-4 transition-transform ${expanded ? "rotate-180" : "-rotate-90"}`}
+            />
+          </Button>
+        </td>
+        <td className="px-3 py-4">
+          <button
+            className="text-left font-medium text-white"
+            onClick={onSelect}
+          >
+            {account.description}
+          </button>
+        </td>
+        <td className="px-3 py-4">
+          <Pill destination={account.destination} />
+        </td>
+        <td className="px-3 py-4">
+          <span
+            className={`inline-flex rounded-lg border px-2 py-1 text-xs font-medium ${account.account_type === "receivable" ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300" : "border-rose-400/60 bg-rose-400/10 text-rose-300"}`}
+          >
+            {account.account_type === "receivable" ? "A receber" : "A pagar"}
+          </span>
+        </td>
+        <td className="px-3 py-4 text-zinc-200">{date(account.due_on)}</td>
+        <td className="px-3 py-4 text-right text-zinc-100">
+          {currency.format(account.original_amount)}
+        </td>
+        <td className="px-3 py-4 text-right text-zinc-100">
+          {currency.format(account.paid_amount)}
+        </td>
+        <td className="px-3 py-4 text-right font-medium text-white">
+          {currency.format(account.outstanding_amount)}
+        </td>
+        <td className="px-3 py-4">
+          <span
+            className={`inline-flex rounded-lg border px-2 py-1 text-xs font-medium ${account.status === "open" ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300" : "border-sky-400/60 bg-sky-400/10 text-sky-300"}`}
+          >
+            {account.status === "open" ? "Em aberto" : "Quitada"}
+          </span>
+        </td>
+        <td className="px-3 py-4">
+          <div className="flex gap-1">
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Editar conta"
+              className="text-zinc-300 hover:bg-[#302e67] hover:text-white"
+              onClick={onEdit}
+            >
+              <Edit3 />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Excluir conta"
+              className="text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
+              onClick={onDelete}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        </td>
+      </tr>
+      {expanded ? (
+        <tr className="border-t border-[#39386a] bg-[#1d1c49]">
+          <td colSpan={10} className="p-4">
+            <div className="rounded-lg border border-[#39386a] bg-[#181642] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="font-semibold text-white">Abatimentos</h3>
+                <Button
+                  disabled={account.status === "settled"}
+                  variant="outline"
+                  className="border-[#5a5796] bg-transparent text-white hover:bg-[#302e67] hover:text-white"
+                  onClick={onSettle}
+                >
+                  <Plus /> Registrar abatimento
+                </Button>
+              </div>
+              {account.settlements.length ? (
+                <ul className="mt-4 space-y-3">
+                  {account.settlements.map((settlement) => (
+                    <li
+                      key={settlement.id}
+                      className="flex items-center gap-3 text-sm text-zinc-200"
+                    >
+                      <span className="size-2 rounded-full bg-sky-400" />
+                      Pagamento{" "}
+                      {account.account_type === "receivable"
+                        ? "recebido"
+                        : "realizado"}{" "}
+                      · {date(settlement.occurred_on)} ·{" "}
+                      {currency.format(settlement.amount)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-zinc-400">
+                  Nenhum abatimento registrado.
+                </p>
+              )}
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function Summary({
+  account,
+  onSettle,
+}: {
+  account: Account | null;
+  onSettle: () => void;
+}) {
+  const progress = account?.original_amount
+    ? Math.min(100, (account.paid_amount / account.original_amount) * 100)
+    : 0;
+  return (
+    <Card className="h-fit border-[#3a3973] bg-[#222153] py-0 shadow-none xl:sticky xl:top-8">
+      <CardContent className="p-5">
+        <h2 className="text-xl font-semibold text-white">Resumo da conta</h2>
+        {account ? (
+          <>
+            <div className="mt-5 flex items-center gap-2 text-sm text-zinc-400">
+              Tipo de pessoa: <Pill destination={account.destination} />
+            </div>
+            <h3 className="mt-3 text-lg font-semibold text-white">
+              {account.description}
+            </h3>
+            <span className="mt-3 inline-flex rounded-lg border border-emerald-400/60 bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-300">
+              {account.status === "open" ? "Em aberto" : "Quitada"}
+            </span>
+            <p className="mt-6 text-sm font-medium text-white">
+              {Math.round(progress)}% pago
+            </p>
+            <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#45437a]">
+              <div
+                className="h-full rounded-full bg-sky-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="mt-6 space-y-4 border-t border-[#39386a] pt-4 text-sm">
+              <Row
+                label="Valor original"
+                value={currency.format(account.original_amount)}
+              />
+              <Row label="Pago" value={currency.format(account.paid_amount)} />
+              <Row
+                label="Saldo devedor"
+                value={currency.format(account.outstanding_amount)}
+                emphasis
+              />
+            </div>
+            <Button
+              disabled={account.status === "settled"}
+              className="mt-6 h-11 w-full bg-sky-500 text-slate-950 hover:bg-sky-400"
+              onClick={onSettle}
+            >
+              <Landmark /> Registrar pagamento
+            </Button>
+          </>
+        ) : (
+          <p className="mt-5 text-sm text-zinc-400">
+            Selecione uma conta na tabela para ver os detalhes.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Row({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-zinc-400">{label}</span>
+      <span
+        className={emphasis ? "font-semibold text-sky-400" : "text-zinc-100"}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function AccountModal({
+  form,
+  setForm,
+  saving,
+  error,
+  editing,
+  duplicating,
+  onClose,
+  onSubmit,
+}: {
+  form: AccountForm;
+  setForm: (next: AccountForm) => void;
+  saving: boolean;
+  error: string;
+  editing: boolean;
+  duplicating: boolean;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Modal
+      title={
+        editing ? "Editar conta" : duplicating ? "Duplicar conta" : "Nova conta"
+      }
+      onClose={onClose}
+    >
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
+        <Field label="Tipo">
+          <select
+            value={form.accountType}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                accountType: event.target.value as AccountType,
+              })
+            }
+            className="h-8 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
+          >
+            <option value="receivable">A receber</option>
+            <option value="payable">A pagar</option>
+          </select>
+        </Field>
+        <Field label="Vencimento">
+          <Input
+            required
+            type="date"
+            value={form.dueOn}
+            className="border-[#4a4880] bg-[#181642]"
+            onChange={(event) =>
+              setForm({ ...form, dueOn: event.target.value })
+            }
+          />
+        </Field>
+        <Field label="Descrição" className="sm:col-span-2">
+          <Input
+            required
+            value={form.description}
+            className="border-[#4a4880] bg-[#181642]"
+            onChange={(event) =>
+              setForm({ ...form, description: event.target.value })
+            }
+          />
+        </Field>
+        <Field label="Tipo de pessoa">
+          <select
+            value={form.destination}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                destination: event.target.value as Destination,
+              })
+            }
+            className="h-8 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
+          >
+            <option value="fisica">Pessoa física</option>
+            <option value="juridica">Pessoa jurídica</option>
+          </select>
+        </Field>
+        <Field label="Valor original">
+          <NumericFormat
+            required
+            customInput={Input}
+            value={form.originalAmount}
+            thousandSeparator="."
+            decimalSeparator=","
+            decimalScale={2}
+            fixedDecimalScale
+            prefix="R$ "
+            allowNegative={false}
+            className="border-[#4a4880] bg-[#181642]"
+            onValueChange={({ floatValue }) =>
+              setForm({ ...form, originalAmount: floatValue?.toString() ?? "" })
+            }
+          />
+        </Field>
+        {error ? (
+          <p className="text-sm text-red-200 sm:col-span-2">{error}</p>
+        ) : null}
+        <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-white hover:bg-[#302e67] hover:text-white"
+            onClick={onClose}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+          >
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SettlementModal({
+  account,
+  amount,
+  setAmount,
+  valueDate,
+  setDate,
+  saving,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  account: Account;
+  amount: string;
+  setAmount: (value: string) => void;
+  valueDate: string;
+  setDate: (value: string) => void;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Modal title="Registrar abatimento" onClose={onClose}>
+      <form className="grid gap-4" onSubmit={onSubmit}>
+        <p className="text-sm text-zinc-400">
+          Saldo atual:{" "}
+          <span className="font-medium text-white">
+            {currency.format(account.outstanding_amount)}
+          </span>
+        </p>
+        <Field label="Valor">
+          <NumericFormat
+            required
+            customInput={Input}
+            value={amount}
+            thousandSeparator="."
+            decimalSeparator=","
+            decimalScale={2}
+            fixedDecimalScale
+            prefix="R$ "
+            allowNegative={false}
+            className="border-[#4a4880] bg-[#181642]"
+            onValueChange={({ floatValue }) =>
+              setAmount(floatValue?.toString() ?? "")
+            }
+          />
+        </Field>
+        <Field label="Data">
+          <Input
+            required
+            type="date"
+            value={valueDate}
+            className="border-[#4a4880] bg-[#181642]"
+            onChange={(event) => setDate(event.target.value)}
+          />
+        </Field>
+        {error ? <p className="text-sm text-red-200">{error}</p> : null}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-white hover:bg-[#302e67] hover:text-white"
+            onClick={onClose}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving}
+            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+          >
+            {saving ? "Registrando..." : "Registrar pagamento"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
