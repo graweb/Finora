@@ -926,6 +926,7 @@ function AccountRow({
     <>
       <tr
         className={`border-t border-[#39386a] transition-colors hover:bg-[#29275c]/45 ${selected ? "bg-[#25245b]" : ""}`}
+        onClick={onSelect}
       >
         <td className="px-4 py-4">
           <input
@@ -933,6 +934,7 @@ function AccountRow({
             checked={selected}
             className="size-4 accent-sky-400"
             type="checkbox"
+            onClick={(event) => event.stopPropagation()}
             onChange={onSelect}
           />
         </td>
