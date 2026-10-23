@@ -9,77 +9,155 @@ import { DashboardNavigation } from "./dashboard-navigation";
 import { FundTable } from "./fund-table";
 import { FundRecommendations } from "./fund-recommendations";
 import { IncomeTargetForm } from "./income-target-form";
+import { RecommendationProgress } from "./recommendation-progress";
+import { toast } from "sonner";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function FinoraDashboard() {
   const [desiredIncome, setDesiredIncome] = useState(100);
-  const [calculationVersion, setCalculationVersion] = useState(0);
-  const [funds, setFunds] = useState<Omit<Fund, "weight">[]>([]);
-  const [isLoadingFunds, setIsLoadingFunds] = useState(true);
+  const [calculationVersion, setCalculationVersion] = useState<number | null>(null);
+  const [requestedIncome, setRequestedIncome] = useState<number | null>(null);
+  const [funds, setFunds] = useState<Fund[]>([]);
+  const [recommendationMetrics, setRecommendationMetrics] = useState({
+    capital: 0,
+    annualYield: 0,
+    monthlyYield: 0,
+  });
+  const [recommendations, setRecommendations] = useState<
+    Array<Fund & { score: number }>
+  >([]);
+  const [refreshingTickers, setRefreshingTickers] = useState<string[]>([]);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [totalRefreshCount, setTotalRefreshCount] = useState(0);
   const [fundsError, setFundsError] = useState("");
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    if (calculationVersion === null || requestedIncome === null) return;
 
-    fetch(`${apiUrl}/investment-funds?limit=100`)
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error("Não foi possível carregar a carteira.");
-        return response.json() as Promise<{
-          items: Array<{
-            name: string;
-            ticker: string;
-            sector: string | null;
-            latest_price: number | string | null;
-            annual_dividend_yield: number | string | null;
+    let isMounted = true;
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      desired_income: Math.max(0.01, requestedIncome).toFixed(2),
+    });
+
+    fetch(`${apiUrl}/investment-funds/recommendations?${query}`, {
+      signal: controller.signal,
+    })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Não foi possível carregar a recomendação.");
+          }
+          return response.json() as Promise<{
+            required_capital: number | string | null;
+            annual_yield: number | string | null;
+            monthly_yield: number | string | null;
+            refreshing_tickers: string[];
+            recommendations: Array<{
+              name: string;
+              ticker: string;
+              sector: string;
+              latest_price: number | string;
+              annual_dividend_yield: number | string;
+              allocation_weight: number | string;
+              score: number;
+            }>;
           }>;
-        }>;
-      })
-      .then((data) => {
-        if (!isMounted) return;
-        setFunds(
-          data.items.map((fund) => ({
+        })
+        .then((data) => {
+          if (!isMounted) return;
+          const mappedFunds = data.recommendations.map((fund) => ({
             name: fund.name,
             ticker: fund.ticker,
             sector: fund.sector ?? "Não informado",
-            referencePrice: Number(fund.latest_price ?? 0),
-            annualYield: Number(fund.annual_dividend_yield ?? 0),
-          })),
-        );
-      })
-      .catch(() => {
-        if (isMounted)
+            referencePrice: Number(fund.latest_price),
+            annualYield: Number(fund.annual_dividend_yield),
+            weight: Number(fund.allocation_weight),
+          }));
+          setFunds(mappedFunds);
+          setRecommendations(
+            data.recommendations.map((fund, index) => ({
+              ...mappedFunds[index],
+              score: fund.score,
+            })),
+          );
+          setRecommendationMetrics({
+            capital: Number(data.required_capital ?? 0),
+            annualYield: Number(data.annual_yield ?? 0),
+            monthlyYield: Number(data.monthly_yield ?? 0),
+          });
+          setRefreshingTickers(data.refreshing_tickers);
+          setTotalRefreshCount((current) =>
+            Math.max(current, data.refreshing_tickers.length),
+          );
+          if (data.refreshing_tickers.length > 0) {
+            setIsProcessing(true);
+          } else {
+            setIsProcessing(false);
+          }
+          setFundsError("");
+        })
+        .catch((error: Error) => {
+          if (!isMounted || error.name === "AbortError") return;
           setFundsError("Não foi possível carregar os fundos cadastrados.");
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingFunds(false);
-      });
-
+          setIsProcessing(false);
+        });
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [calculationVersion]);
+  }, [calculationVersion, refreshVersion, requestedIncome]);
+
+  useEffect(() => {
+    if (!isProcessing || refreshingTickers.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      setRefreshVersion((version) => version + 1);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [isProcessing, refreshingTickers]);
+
+  const handleCalculate = () => {
+    setRequestedIncome(Math.max(0, desiredIncome));
+    setRefreshingTickers([]);
+    setTotalRefreshCount(0);
+    setIsProcessing(false);
+    setFundsError("");
+    setCalculationVersion((version) => (version ?? 0) + 1);
+  };
+
+  const handleClearCache = async () => {
+    setIsClearingCache(true);
+    try {
+      const response = await fetch(`${apiUrl}/investment-funds/cache`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Não foi possível limpar o cache.");
+      }
+      const data = (await response.json()) as { deleted_count: number };
+      toast.success("Cache limpo", {
+        description: `${data.deleted_count} registro(s) removido(s) do Redis.`,
+      });
+    } catch {
+      toast.error("Não foi possível limpar o cache dos FIIs.");
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
+
   const income = Math.max(0, desiredIncome);
-  const portfolioFunds = useMemo(
-    () =>
-      funds.map((fund) => ({
-        ...fund,
-        weight: funds.length > 0 ? 1 / funds.length : 0,
-      })),
-    [funds],
-  );
+  const portfolioFunds = useMemo(() => funds, [funds]);
   const isPortfolioReady =
     portfolioFunds.length > 0 &&
     portfolioFunds.every(
       (fund) => fund.referencePrice > 0 && fund.annualYield > 0,
     );
-  const annualYield = portfolioFunds.reduce(
-    (total, fund) => total + fund.weight * fund.annualYield,
-    0,
-  );
-  const monthlyYield = Math.pow(1 + annualYield, 1 / 12) - 1;
-  const capital = isPortfolioReady ? income / monthlyYield : 0;
+  const annualYield = recommendationMetrics.annualYield;
+  const monthlyYield = recommendationMetrics.monthlyYield;
+  const capital = isPortfolioReady ? recommendationMetrics.capital : 0;
   const sectors = useMemo(
     () =>
       Object.entries(
@@ -93,34 +171,6 @@ export function FinoraDashboard() {
       ).sort((a, b) => b[1] - a[1]),
     [portfolioFunds],
   );
-  const recommendations = useMemo(() => {
-    const eligibleFunds = portfolioFunds.filter(
-      (fund) => fund.referencePrice > 0 && fund.annualYield > 0,
-    );
-    const highestYield = Math.max(
-      ...eligibleFunds.map((fund) => fund.annualYield),
-      0,
-    );
-    const fundsPerSector = eligibleFunds.reduce<Record<string, number>>(
-      (count, fund) => ({
-        ...count,
-        [fund.sector]: (count[fund.sector] ?? 0) + 1,
-      }),
-      {},
-    );
-
-    return eligibleFunds
-      .map((fund) => ({
-        ...fund,
-        score: Math.round(
-          (highestYield > 0 ? (fund.annualYield / highestYield) * 70 : 0) +
-            20 / fundsPerSector[fund.sector] +
-            10,
-        ),
-      }))
-      .sort((first, second) => second.score - first.score);
-  }, [portfolioFunds]);
-
   return (
     <main className="min-h-screen bg-[#181642] text-zinc-100">
       <DashboardNavigation activeView="dashboard" />
@@ -129,18 +179,20 @@ export function FinoraDashboard() {
           <IncomeTargetForm
             value={income}
             onChange={setDesiredIncome}
-            onCalculate={() => setCalculationVersion((version) => version + 1)}
+            onCalculate={handleCalculate}
+            onClearCache={handleClearCache}
+            isClearingCache={isClearingCache}
           />
-          {isLoadingFunds ? (
-            <p className="mt-4 text-sm text-zinc-400">Carregando carteira...</p>
-          ) : null}
           {fundsError ? (
             <p className="mt-4 text-sm text-red-200">{fundsError}</p>
           ) : null}
-          {!isLoadingFunds && !fundsError && !isPortfolioReady ? (
+          {calculationVersion !== null &&
+          !fundsError &&
+          !isPortfolioReady ? (
             <p className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
-              Para calcular a carteira, cadastre preço e DY em todos os fundos.
-              A alocação é recalculada igualmente entre os FIIs disponíveis.
+              Para calcular a carteira, cadastre preço e DY em pelo menos um FII.
+              Os melhores fundos são selecionados pela rentabilidade, diversidade
+              por setor e dados atualizados.
             </p>
           ) : null}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
@@ -186,6 +238,26 @@ export function FinoraDashboard() {
           </div>
         </section>
         <aside className="border-t border-[#343366] bg-[#242351] p-5 sm:p-7 lg:border-t-0 lg:border-l lg:p-7">
+          <RecommendationProgress
+            isProcessing={isProcessing}
+            progress={
+              isProcessing
+                ? totalRefreshCount > 0
+                  ? Math.min(
+                      95,
+                      Math.round(
+                        ((totalRefreshCount - refreshingTickers.length) /
+                          totalRefreshCount) *
+                          100,
+                      ),
+                    )
+                  : 15
+                : calculationVersion !== null
+                  ? 100
+                  : 0
+            }
+            remainingFunds={refreshingTickers.length}
+          />
           <FundRecommendations funds={recommendations} />
         </aside>
       </div>

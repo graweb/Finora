@@ -19,6 +19,15 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models.investment_fund import InvestmentFund
+from app.services.fund_cache import (
+    cache_fund,
+    clear_fund_cache,
+    finish_fund_refresh,
+    FundCacheError,
+    get_cached_fund,
+    is_fund_refreshing,
+    schedule_fund_refresh,
+)
 from app.services.funds_explorer import FundsExplorerError, fetch_fund
 
 router = APIRouter(prefix="/investment-funds", tags=["investment-funds"])
@@ -57,6 +66,33 @@ class InvestmentFundListResponse(BaseModel):
     items: list[InvestmentFundResponse]
     pagination: PaginationResponse
     totals: InvestmentFundTotals
+
+
+class InvestmentFundRecommendation(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    latest_price: Decimal
+    annual_dividend_yield: Decimal
+    monthly_yield: Decimal
+    score: int
+    allocation_weight: Decimal
+    allocation_amount: Decimal
+    estimated_monthly_income: Decimal
+    source: str
+
+
+class InvestmentFundRecommendationResponse(BaseModel):
+    desired_income: Decimal
+    required_capital: Decimal | None
+    annual_yield: Decimal | None
+    monthly_yield: Decimal | None
+    recommendations: list[InvestmentFundRecommendation]
+    refreshing_tickers: list[str]
+
+
+class FundCacheClearResponse(BaseModel):
+    deleted_count: int
 
 
 class BulkDeletePayload(BaseModel):
@@ -104,6 +140,7 @@ def get_fund_or_404(fund_id: int, db: Session) -> InvestmentFund:
 def create_fund_from_explorer(ticker: str) -> None:
     try:
         explorer_fund = fetch_fund(ticker, settings.funds_explorer_base_url)
+        cache_fund(explorer_fund)
         with SessionLocal() as db:
             fund = db.scalar(
                 select(InvestmentFund).where(
@@ -137,6 +174,7 @@ def import_funds_from_explorer(tickers: list[str]) -> None:
 def sync_fund_from_explorer(ticker: str) -> None:
     try:
         explorer_fund = fetch_fund(ticker, settings.funds_explorer_base_url)
+        cache_fund(explorer_fund)
         with SessionLocal() as db:
             fund = db.scalar(
                 select(InvestmentFund).where(InvestmentFund.ticker == ticker)
@@ -158,6 +196,155 @@ def sync_fund_from_explorer(ticker: str) -> None:
 def sync_funds_from_explorer(tickers: list[str]) -> None:
     for ticker in tickers:
         sync_fund_from_explorer(ticker)
+
+
+def refresh_fund_cache(tickers: list[str]) -> None:
+    for ticker in tickers:
+        try:
+            cache_fund(fetch_fund(ticker, settings.funds_explorer_base_url))
+        except FundsExplorerError as error:
+            logger.warning("Funds Explorer cache refresh failed for %s: %s", ticker, error)
+        except Exception:
+            logger.exception("Unexpected Funds Explorer cache refresh failure for %s", ticker)
+        finally:
+            finish_fund_refresh(ticker)
+
+
+def _monthly_yield(annual_yield: Decimal) -> Decimal:
+    return Decimal(str((1 + float(annual_yield)) ** (1 / 12) - 1))
+
+
+def _build_recommendations(
+    funds: list[InvestmentFund], desired_income: Decimal
+) -> tuple[list[InvestmentFundRecommendation], Decimal | None, Decimal | None, Decimal | None, list[str]]:
+    candidates: list[dict[str, object]] = []
+    uncached_tickers: list[str] = []
+
+    for fund in funds:
+        cached_fund = get_cached_fund(fund.ticker)
+        if cached_fund is None:
+            uncached_tickers.append(fund.ticker)
+
+        latest_price = (
+            cached_fund.latest_price if cached_fund else fund.latest_price
+        )
+        annual_yield = (
+            cached_fund.annual_dividend_yield
+            if cached_fund
+            else fund.annual_dividend_yield
+        )
+        if latest_price is None or latest_price <= 0 or annual_yield is None or annual_yield <= 0:
+            continue
+
+        candidates.append(
+            {
+                "ticker": fund.ticker,
+                "name": cached_fund.name if cached_fund else fund.name,
+                "sector": (cached_fund.sector if cached_fund else fund.sector)
+                or "Não informado",
+                "latest_price": latest_price,
+                "annual_yield": annual_yield,
+                "source": "redis" if cached_fund else "database",
+            }
+        )
+
+    if not candidates:
+        return [], None, None, None, uncached_tickers
+
+    highest_yield = max(Decimal(item["annual_yield"]) for item in candidates)
+    funds_per_sector: dict[str, int] = {}
+    for item in candidates:
+        sector = str(item["sector"])
+        funds_per_sector[sector] = funds_per_sector.get(sector, 0) + 1
+
+    for item in candidates:
+        annual_yield = Decimal(item["annual_yield"])
+        sector = str(item["sector"])
+        yield_score = (annual_yield / highest_yield) * Decimal("60")
+        diversification_score = Decimal("25") / funds_per_sector[sector]
+        freshness_score = Decimal("15") if item["source"] == "redis" else Decimal("5")
+        item["score"] = int(
+            (yield_score + diversification_score + freshness_score).quantize(Decimal("1"))
+        )
+
+    selected = sorted(candidates, key=lambda item: int(item["score"]), reverse=True)[:10]
+    total_score = sum(Decimal(int(item["score"])) for item in selected)
+    if total_score <= 0:
+        return [], None, None, None, uncached_tickers
+
+    for item in selected:
+        item["allocation_weight"] = Decimal(int(item["score"])) / total_score
+        item["monthly_yield"] = _monthly_yield(Decimal(item["annual_yield"]))
+
+    monthly_yield = sum(
+        Decimal(item["allocation_weight"]) * Decimal(item["monthly_yield"])
+        for item in selected
+    )
+    annual_yield = sum(
+        Decimal(item["allocation_weight"]) * Decimal(item["annual_yield"])
+        for item in selected
+    )
+    required_capital = desired_income / monthly_yield if monthly_yield > 0 else None
+
+    recommendations = [
+        InvestmentFundRecommendation(
+            ticker=str(item["ticker"]),
+            name=str(item["name"]),
+            sector=str(item["sector"]),
+            latest_price=Decimal(item["latest_price"]),
+            annual_dividend_yield=Decimal(item["annual_yield"]),
+            monthly_yield=Decimal(item["monthly_yield"]),
+            score=int(item["score"]),
+            allocation_weight=Decimal(item["allocation_weight"]),
+            allocation_amount=(required_capital or Decimal("0"))
+            * Decimal(item["allocation_weight"]),
+            estimated_monthly_income=desired_income
+            * Decimal(item["allocation_weight"]),
+            source=str(item["source"]),
+        )
+        for item in selected
+    ]
+    return recommendations, required_capital, annual_yield, monthly_yield, uncached_tickers
+
+
+@router.get("/recommendations", response_model=InvestmentFundRecommendationResponse)
+def get_investment_fund_recommendations(
+    background_tasks: BackgroundTasks,
+    desired_income: Decimal = Query(gt=0, max_digits=12, decimal_places=2),
+    db: Session = Depends(get_db),
+) -> InvestmentFundRecommendationResponse:
+    funds = list(db.scalars(select(InvestmentFund).order_by(InvestmentFund.ticker)))
+    (
+        recommendations,
+        required_capital,
+        annual_yield,
+        monthly_yield,
+        uncached_tickers,
+    ) = _build_recommendations(funds, desired_income)
+    scheduled_tickers = schedule_fund_refresh(uncached_tickers)
+    if scheduled_tickers:
+        background_tasks.add_task(refresh_fund_cache, scheduled_tickers)
+    refreshing_tickers = [
+        ticker for ticker in uncached_tickers if is_fund_refreshing(ticker)
+    ]
+
+    return InvestmentFundRecommendationResponse(
+        desired_income=desired_income,
+        required_capital=required_capital,
+        annual_yield=annual_yield,
+        monthly_yield=monthly_yield,
+        recommendations=recommendations,
+        refreshing_tickers=refreshing_tickers,
+    )
+
+
+@router.delete("/cache", response_model=FundCacheClearResponse)
+def clear_investment_fund_cache() -> FundCacheClearResponse:
+    try:
+        deleted_count = clear_fund_cache()
+    except FundCacheError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return FundCacheClearResponse(deleted_count=deleted_count)
 
 
 @router.post(

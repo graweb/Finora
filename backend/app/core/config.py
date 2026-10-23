@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     database_url: str
     cors_origins: str = "http://localhost:3000"
     funds_explorer_base_url: str = "https://www.fundsexplorer.com.br"
+    redis_url: str = "redis://redis:6379/0"
+    fund_cache_ttl_seconds: int = 86400
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

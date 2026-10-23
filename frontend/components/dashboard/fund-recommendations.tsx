@@ -15,7 +15,7 @@ export function FundRecommendations({ funds }: { funds: RecommendedFund[] }) {
             FIIs em destaque
           </h2>
           <p className="mt-1 text-xs text-zinc-400">
-            Ranking da base cadastrada, recalculado ao simular.
+            Ranking da base cadastrada, atualizado pelo Funds Explorer.
           </p>
         </div>
         <span className="rounded-full bg-violet-400/10 px-2 py-1 text-[10px] font-semibold text-violet-200">
@@ -74,8 +74,8 @@ export function FundRecommendations({ funds }: { funds: RecommendedFund[] }) {
       )}
 
       <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-        Score informativo: 70% dividend yield anual, 20% diversificação por setor
-        e 10% dados completos. Não constitui recomendação de investimento.
+        Score informativo: 60% dividend yield anual, 25% diversificação por setor
+        e 15% dados atualizados. Não constitui recomendação de investimento.
       </p>
     </section>
   );

@@ -7,10 +7,14 @@ export function IncomeTargetForm({
   value,
   onChange,
   onCalculate,
+  onClearCache,
+  isClearingCache,
 }: {
   value: number;
   onChange: (value: number) => void;
   onCalculate: () => void;
+  onClearCache: () => void;
+  isClearingCache: boolean;
 }) {
   return (
     <Card className="border-[#4b4990] bg-[#26245b] py-0 shadow-none">
@@ -20,10 +24,10 @@ export function IncomeTargetForm({
             Quanto você quer receber por mês?
           </p>
           <p className="mt-1 text-xs text-zinc-300">
-            A simulação usa o yield ponderado da carteira da planilha.
+            A simulação prioriza os FIIs com melhor score da sua base.
           </p>
         </div>
-        <div className="flex w-full gap-2 sm:w-67.5">
+        <div className="flex w-full gap-2 sm:w-auto">
           <NumericFormat
             customInput={Input}
             value={value}
@@ -36,7 +40,7 @@ export function IncomeTargetForm({
             allowNegative={false}
             inputMode="decimal"
             aria-label="Renda mensal desejada"
-            className="border-[#57549b] bg-[#1a1946] text-lg font-semibold text-white"
+            className="min-w-0 flex-1 border-[#57549b] bg-[#1a1946] text-lg font-semibold text-white sm:w-52"
           />
           <Button
             type="button"
@@ -44,6 +48,15 @@ export function IncomeTargetForm({
             onClick={onCalculate}
           >
             Calcular
+          </Button>
+          <Button
+            type="button"
+            disabled={isClearingCache}
+            variant="outline"
+            className="border-zinc-600 bg-zinc-900 text-white hover:bg-zinc-800"
+            onClick={onClearCache}
+          >
+            {isClearingCache ? "Limpando..." : "Limpar cache"}
           </Button>
         </div>
       </CardContent>
