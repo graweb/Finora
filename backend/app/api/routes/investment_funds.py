@@ -23,11 +23,15 @@ from app.models.investment_fund import InvestmentFund
 from app.services.fund_cache import (
     cache_fund,
     clear_fund_cache,
+    create_fund_sync_job,
     finish_fund_refresh,
     FundCacheError,
     get_cached_fund,
+    get_fund_sync_job,
     is_fund_refreshing,
     schedule_fund_refresh,
+    finish_fund_sync_job,
+    update_fund_sync_job,
 )
 from app.services.funds_explorer import FundsExplorerError, fetch_fund
 
@@ -102,13 +106,21 @@ class BulkDeletePayload(BaseModel):
 
 
 class FundsExplorerSyncPayload(BaseModel):
-    ids: list[int] = Field(min_length=1, max_length=5)
+    ids: list[int] = Field(min_length=1)
 
 
 class FundImportQueuedResponse(BaseModel):
     detail: str
     tickers: list[str]
     source: str
+    job_id: str | None = None
+
+
+class FundSyncJobResponse(BaseModel):
+    status: str
+    total: int
+    processed: int
+    failed: int
 
 
 class FundsExplorerImportPayload(BaseModel):
@@ -173,7 +185,7 @@ def import_funds_from_explorer(tickers: list[str]) -> None:
         create_fund_from_explorer(ticker)
 
 
-def sync_fund_from_explorer(ticker: str) -> None:
+def sync_fund_from_explorer(ticker: str) -> bool:
     try:
         explorer_fund = fetch_fund(ticker, settings.funds_explorer_base_url)
         cache_fund(explorer_fund)
@@ -183,21 +195,25 @@ def sync_fund_from_explorer(ticker: str) -> None:
             )
             if fund is None:
                 logger.info("Funds Explorer sync skipped for missing FII %s", ticker)
-                return
+                return False
             fund.name = explorer_fund.name
             fund.sector = explorer_fund.sector
             fund.latest_price = explorer_fund.latest_price
             fund.annual_dividend_yield = explorer_fund.annual_dividend_yield
             db.commit()
+            return True
     except FundsExplorerError as error:
         logger.warning("Funds Explorer sync failed for %s: %s", ticker, error)
     except Exception:
         logger.exception("Unexpected Funds Explorer sync failure for %s", ticker)
+    return False
 
 
-def sync_funds_from_explorer(tickers: list[str]) -> None:
+def sync_funds_from_explorer(tickers: list[str], job_id: str) -> None:
     for ticker in tickers:
-        sync_fund_from_explorer(ticker)
+        succeeded = sync_fund_from_explorer(ticker)
+        update_fund_sync_job(job_id, succeeded=succeeded)
+    finish_fund_sync_job(job_id)
 
 
 def refresh_fund_cache(tickers: list[str]) -> None:
@@ -404,7 +420,11 @@ def sync_investment_funds_from_explorer(
         )
 
     tickers = [fund.ticker for fund in funds]
-    background_tasks.add_task(sync_funds_from_explorer, tickers)
+    try:
+        job_id = create_fund_sync_job(tickers)
+    except FundCacheError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    background_tasks.add_task(sync_funds_from_explorer, tickers, job_id)
     return FundImportQueuedResponse(
         detail=(
             f"Atualização de {len(tickers)} FII(s) agendada no Funds Explorer "
@@ -412,7 +432,21 @@ def sync_investment_funds_from_explorer(
         ),
         tickers=tickers,
         source="funds_explorer",
+        job_id=job_id,
     )
+
+
+@router.get(
+    "/sync/funds-explorer/{job_id}", response_model=FundSyncJobResponse
+)
+def get_investment_fund_sync_status(job_id: str) -> FundSyncJobResponse:
+    try:
+        job = get_fund_sync_job(job_id)
+    except FundCacheError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if job is None:
+        raise HTTPException(status_code=404, detail="Atualização não encontrada.")
+    return FundSyncJobResponse(**job)
 
 
 @router.get("", response_model=InvestmentFundListResponse)

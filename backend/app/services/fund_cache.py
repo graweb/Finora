@@ -1,5 +1,6 @@
 import json
 import logging
+from uuid import uuid4
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -14,6 +15,8 @@ from app.services.funds_explorer import FundsExplorerFundData
 logger = logging.getLogger(__name__)
 _CACHE_PREFIX = "finora:fii:"
 _REFRESH_PREFIX = "finora:fii:refresh:"
+_SYNC_JOB_PREFIX = "finora:fii:sync-job:"
+_SYNC_JOB_TTL_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,74 @@ class CachedFundData:
 
 class FundCacheError(Exception):
     """Raised when the FII cache cannot be accessed."""
+
+
+def _sync_job_key(job_id: str) -> str:
+    return f"{_SYNC_JOB_PREFIX}{job_id}"
+
+
+def create_fund_sync_job(tickers: list[str]) -> str:
+    job_id = str(uuid4())
+    payload = {
+        "status": "running",
+        "total": len(tickers),
+        "processed": 0,
+        "failed": 0,
+    }
+    try:
+        get_redis_client().setex(
+            _sync_job_key(job_id), _SYNC_JOB_TTL_SECONDS, json.dumps(payload)
+        )
+    except RedisError as error:
+        raise FundCacheError("Não foi possível acompanhar a atualização dos FIIs.") from error
+    return job_id
+
+
+def update_fund_sync_job(job_id: str, *, succeeded: bool) -> None:
+    try:
+        redis = get_redis_client()
+        serialized = redis.get(_sync_job_key(job_id))
+        if not serialized:
+            return
+        payload = json.loads(serialized)
+        payload["processed"] = int(payload.get("processed", 0)) + 1
+        if not succeeded:
+            payload["failed"] = int(payload.get("failed", 0)) + 1
+        redis.setex(_sync_job_key(job_id), _SYNC_JOB_TTL_SECONDS, json.dumps(payload))
+    except (RedisError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Redis is unavailable while updating FII sync job %s", job_id)
+
+
+def finish_fund_sync_job(job_id: str) -> None:
+    try:
+        redis = get_redis_client()
+        serialized = redis.get(_sync_job_key(job_id))
+        if not serialized:
+            return
+        payload = json.loads(serialized)
+        payload["status"] = "completed"
+        redis.setex(_sync_job_key(job_id), _SYNC_JOB_TTL_SECONDS, json.dumps(payload))
+    except (RedisError, TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Redis is unavailable while completing FII sync job %s", job_id)
+
+
+def get_fund_sync_job(job_id: str) -> dict[str, int | str] | None:
+    try:
+        serialized = get_redis_client().get(_sync_job_key(job_id))
+    except RedisError as error:
+        raise FundCacheError("Não foi possível consultar a atualização dos FIIs.") from error
+    if not serialized:
+        return None
+    try:
+        payload = json.loads(serialized)
+        return {
+            "status": str(payload["status"]),
+            "total": int(payload["total"]),
+            "processed": int(payload["processed"]),
+            "failed": int(payload["failed"]),
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
 
 
 @lru_cache

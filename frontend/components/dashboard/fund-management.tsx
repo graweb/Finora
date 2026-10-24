@@ -64,6 +64,12 @@ type FundListResponse = {
     funds_with_dividend_yield: number;
   };
 };
+type FundSyncJob = {
+  status: "running" | "completed";
+  total: number;
+  processed: number;
+  failed: number;
+};
 type FundFilterKey =
   | "ticker"
   | "name"
@@ -157,19 +163,22 @@ export function FundManagement() {
   const [isImporting, setIsImporting] = useState(false);
   const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadFunds() {
-    setIsLoading(true);
-    setError("");
+  async function loadFunds({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) {
+      setIsLoading(true);
+      setError("");
+    }
     try {
       setFundData(await fetchAllFunds());
     } catch {
-      setError("Não foi possível carregar os fundos da API.");
+      if (!silent) setError("Não foi possível carregar os fundos da API.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }
 
@@ -316,21 +325,50 @@ export function FundManagement() {
     );
   }
 
-  function scheduleFundsReload() {
-    [3000, 12000, 30000, 60000, 80000].forEach((delay) => {
+  function scheduleFundsReload(onComplete?: () => void) {
+    const delays = [3000, 12000, 30000, 60000, 80000];
+    delays.forEach((delay, index) => {
       window.setTimeout(() => {
-        void loadFunds();
+        void loadFunds({ silent: true }).finally(() => {
+          if (index === delays.length - 1) onComplete?.();
+        });
       }, delay);
     });
+  }
+
+  function watchFundSync(jobId: string) {
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `${apiUrl}/investment-funds/sync/funds-explorer/${jobId}`,
+        );
+        if (!response.ok) throw new Error();
+        const job = (await response.json()) as FundSyncJob;
+        await loadFunds({ silent: true });
+
+        if (job.status === "completed") {
+          setIsRefreshing(false);
+          if (job.failed > 0) {
+            toast.warning(
+              `Atualização concluída com ${job.failed} FII(s) sem dados disponíveis.`,
+            );
+          } else {
+            toast.success("Todos os FIIs selecionados foram atualizados.");
+          }
+          return;
+        }
+        window.setTimeout(() => void poll(), 2000);
+      } catch {
+        setIsRefreshing(false);
+        toast.error("Não foi possível acompanhar a atualização dos FIIs.");
+      }
+    };
+    void poll();
   }
 
   function requestFundsSync() {
     if (selectedFundIds.length === 0) {
       toast.error("Selecione pelo menos um FII para atualizar.");
-      return;
-    }
-    if (selectedFundIds.length > 5) {
-      toast.error("Selecione no máximo 5 FIIs para atualizar a cotação.");
       return;
     }
     setIsSyncDialogOpen(true);
@@ -354,13 +392,16 @@ export function FundManagement() {
       }
       const result = (await response.json().catch(() => null)) as {
         detail?: string;
+        job_id?: string;
       } | null;
       setIsSyncDialogOpen(false);
       toast.info(
         result?.detail ??
           "A atualização dos FIIs foi agendada em segundo plano.",
       );
-      scheduleFundsReload();
+      setIsRefreshing(true);
+      if (result?.job_id) watchFundSync(result.job_id);
+      else setIsRefreshing(false);
     } catch (syncError) {
       const message =
         syncError instanceof Error
@@ -502,8 +543,12 @@ export function FundManagement() {
                 size="sm"
                 className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
                 onClick={requestFundsSync}
+                disabled={isSyncing || isRefreshing}
               >
-                <RefreshCw className="size-3.5" /> Atualizar
+                <RefreshCw
+                  className={`size-3.5 ${isSyncing || isRefreshing ? "animate-spin" : ""}`}
+                />
+                {isSyncing || isRefreshing ? "Atualizando..." : "Atualizar"}
               </Button>
               <Button
                 variant="outline"
