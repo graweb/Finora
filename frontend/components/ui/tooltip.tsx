@@ -29,7 +29,11 @@ function TooltipContent({
   ComponentProps<typeof TooltipPrimitive.Popup> & { sideOffset?: number }) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Positioner sideOffset={sideOffset} {...props}>
+      <TooltipPrimitive.Positioner
+        sideOffset={sideOffset}
+        className="z-[100]"
+        {...props}
+      >
         <TooltipPrimitive.Popup
           className={cn(
             "z-50 rounded-md border border-[#4a4880] bg-[#222153] px-2.5 py-1.5 text-xs font-medium text-zinc-100 shadow-xl",

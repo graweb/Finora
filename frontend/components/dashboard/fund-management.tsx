@@ -16,6 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
@@ -142,6 +148,23 @@ function toPayload(form: FundForm) {
       ? Number(form.annualDividendYield) / 100
       : null,
   };
+}
+
+function ActionTooltip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function FundManagement() {
@@ -537,55 +560,72 @@ export function FundManagement() {
                 Gerencie os fundos cadastrados na sua carteira.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={requestFundsSync}
-                disabled={isSyncing || isRefreshing}
-              >
-                <RefreshCw
-                  className={`size-3.5 ${isSyncing || isRefreshing ? "animate-spin" : ""}`}
-                />
-                {isSyncing || isRefreshing ? "Atualizando..." : "Atualizar"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={() => {
-                  setError("");
-                  setIsImportOpen(true);
-                }}
-              >
-                <Download className="size-3.5" /> Importar FII
-              </Button>
-              <Button
-                size="sm"
-                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-                onClick={openCreateForm}
-              >
-                <Plus className="size-3.5" /> Adicionar
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                onClick={openEditForm}
-                disabled={!selectedFund}
-              >
-                <Edit3 className="size-3.5" /> Editar
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setIsDeleteDialogOpen(true)}
-                disabled={selectedFundIds.length === 0}
-              >
-                <Trash2 className="size-3.5" /> Excluir
-              </Button>
-            </div>
+            <TooltipProvider>
+              <div className="flex flex-wrap gap-2">
+                <ActionTooltip label="Atualizar FIIs selecionados">
+                  <Button
+                    aria-label="Atualizar FIIs selecionados"
+                    variant="outline"
+                    size="icon-lg"
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={requestFundsSync}
+                    disabled={isSyncing || isRefreshing}
+                  >
+                    <RefreshCw
+                      className={`size-4 ${isSyncing || isRefreshing ? "animate-spin" : ""}`}
+                    />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Importar FIIs">
+                  <Button
+                    aria-label="Importar FIIs"
+                    variant="outline"
+                    size="icon-lg"
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={() => {
+                      setError("");
+                      setIsImportOpen(true);
+                    }}
+                  >
+                    <Download className="size-4" />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Adicionar FII">
+                  <Button
+                    aria-label="Adicionar FII"
+                    size="icon-lg"
+                    className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
+                    onClick={openCreateForm}
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Editar FII selecionado">
+                  <Button
+                    aria-label="Editar FII selecionado"
+                    variant="outline"
+                    size="icon-lg"
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={openEditForm}
+                    disabled={!selectedFund}
+                  >
+                    <Edit3 className="size-4" />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Excluir FIIs selecionados">
+                  <Button
+                    aria-label="Excluir FIIs selecionados"
+                    variant="destructive"
+                    size="icon-lg"
+                    className="size-10"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    disabled={selectedFundIds.length === 0}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </ActionTooltip>
+              </div>
+            </TooltipProvider>
           </div>
 
           {error && !isFormOpen ? (

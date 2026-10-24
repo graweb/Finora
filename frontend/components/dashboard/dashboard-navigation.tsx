@@ -4,6 +4,12 @@ import { useState } from "react";
 import { Calculator, ChartPie, Home, Menu, WalletCards, X } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type DashboardView = "dashboard" | "portfolio" | "funds" | "financial";
 
@@ -90,23 +96,29 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
       </aside>
 
       <nav className="fixed inset-y-0 left-0 z-20 hidden w-19.5 items-center justify-center bg-[#242351] lg:flex">
-        <div className="flex flex-col gap-7">
-          {navigationItems.map(({ href, icon: Icon, label, view }) => (
-            <Link
-              href={href}
-              aria-label={label}
-              className={buttonVariants({
-                size: "icon",
-                variant: "ghost",
-                className:
-                  activeView === view ? "text-sky-400" : "text-zinc-300",
-              })}
-              key={href}
-            >
-              <Icon className="size-6" />
-            </Link>
-          ))}
-        </div>
+        <TooltipProvider>
+          <div className="flex flex-col gap-7">
+            {navigationItems.map(({ href, icon: Icon, label, view }) => (
+              <Tooltip key={href}>
+                <TooltipTrigger render={<span className="inline-flex" />}>
+                  <Link
+                    href={href}
+                    aria-label={label}
+                    className={buttonVariants({
+                      size: "icon",
+                      variant: "ghost",
+                      className:
+                        activeView === view ? "text-sky-400" : "text-zinc-300",
+                    })}
+                  >
+                    <Icon className="size-6" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">{label}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
       </nav>
     </>
   );

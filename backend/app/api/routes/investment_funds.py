@@ -22,11 +22,13 @@ from app.db.session import SessionLocal, get_db
 from app.models.investment_fund import InvestmentFund
 from app.services.fund_cache import (
     cache_fund,
+    cache_recommendation,
     clear_fund_cache,
     create_fund_sync_job,
     finish_fund_refresh,
     FundCacheError,
     get_cached_fund,
+    get_cached_recommendation,
     get_fund_sync_job,
     is_fund_refreshing,
     schedule_fund_refresh,
@@ -346,7 +348,7 @@ def get_investment_fund_recommendations(
         ticker for ticker in uncached_tickers if is_fund_refreshing(ticker)
     ]
 
-    return InvestmentFundRecommendationResponse(
+    response = InvestmentFundRecommendationResponse(
         desired_income=desired_income,
         required_capital=required_capital,
         annual_yield=annual_yield,
@@ -354,6 +356,19 @@ def get_investment_fund_recommendations(
         recommendations=recommendations,
         refreshing_tickers=refreshing_tickers,
     )
+    cache_recommendation(response.model_dump(mode="json"))
+    return response
+
+
+@router.get(
+    "/recommendations/cached",
+    response_model=InvestmentFundRecommendationResponse,
+)
+def get_cached_investment_fund_recommendations() -> InvestmentFundRecommendationResponse:
+    cached_recommendation = get_cached_recommendation()
+    if cached_recommendation is None:
+        raise HTTPException(status_code=404, detail="Nenhuma recomendação em cache.")
+    return InvestmentFundRecommendationResponse.model_validate(cached_recommendation)
 
 
 @router.delete("/cache", response_model=FundCacheClearResponse)

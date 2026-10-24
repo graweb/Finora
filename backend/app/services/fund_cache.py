@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _CACHE_PREFIX = "finora:fii:"
 _REFRESH_PREFIX = "finora:fii:refresh:"
 _SYNC_JOB_PREFIX = "finora:fii:sync-job:"
+_RECOMMENDATION_KEY = "finora:recommendations:latest"
 _SYNC_JOB_TTL_SECONDS = 3600
 
 
@@ -194,9 +195,39 @@ def clear_fund_cache() -> int:
     try:
         redis = get_redis_client()
         keys = list(redis.scan_iter(match=f"{_CACHE_PREFIX}*"))
+        keys.append(_RECOMMENDATION_KEY)
         return redis.delete(*keys) if keys else 0
     except RedisError as error:
         raise FundCacheError("Não foi possível limpar o cache dos FIIs.") from error
+
+
+def cache_recommendation(payload: dict[str, object]) -> None:
+    try:
+        get_redis_client().setex(
+            _RECOMMENDATION_KEY,
+            settings.fund_cache_ttl_seconds,
+            json.dumps(payload),
+        )
+    except RedisError:
+        logger.warning("Redis is unavailable while caching FII recommendations")
+
+
+def get_cached_recommendation() -> dict[str, object] | None:
+    try:
+        serialized = get_redis_client().get(_RECOMMENDATION_KEY)
+    except RedisError:
+        logger.warning("Redis is unavailable while reading cached FII recommendations")
+        return None
+
+    if not serialized:
+        return None
+
+    try:
+        payload = json.loads(serialized)
+        return payload if isinstance(payload, dict) else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Ignoring invalid cached FII recommendations")
+        return None
 
 
 def _to_decimal(value: object) -> Decimal | None:

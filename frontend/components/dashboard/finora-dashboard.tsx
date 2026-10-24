@@ -14,6 +14,23 @@ import { toast } from "sonner";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+type RecommendationResponse = {
+  desired_income: number | string;
+  required_capital: number | string | null;
+  annual_yield: number | string | null;
+  monthly_yield: number | string | null;
+  refreshing_tickers: string[];
+  recommendations: Array<{
+    name: string;
+    ticker: string;
+    sector: string;
+    latest_price: number | string;
+    annual_dividend_yield: number | string;
+    allocation_weight: number | string;
+    score: number;
+  }>;
+};
+
 export function FinoraDashboard() {
   const [desiredIncome, setDesiredIncome] = useState(100);
   const [calculationVersion, setCalculationVersion] = useState<number | null>(null);
@@ -30,9 +47,69 @@ export function FinoraDashboard() {
   const [refreshingTickers, setRefreshingTickers] = useState<string[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasRecommendation, setHasRecommendation] = useState(false);
   const [totalRefreshCount, setTotalRefreshCount] = useState(0);
   const [fundsError, setFundsError] = useState("");
   const [isClearingCache, setIsClearingCache] = useState(false);
+
+  const applyRecommendation = (data: RecommendationResponse) => {
+    const mappedFunds = data.recommendations.map((fund) => ({
+      name: fund.name,
+      ticker: fund.ticker,
+      sector: fund.sector ?? "Não informado",
+      referencePrice: Number(fund.latest_price),
+      annualYield: Number(fund.annual_dividend_yield),
+      weight: Number(fund.allocation_weight),
+    }));
+
+    setFunds(mappedFunds);
+    setRecommendations(
+      data.recommendations.map((fund, index) => ({
+        ...mappedFunds[index],
+        score: fund.score,
+      })),
+    );
+    setRecommendationMetrics({
+      capital: Number(data.required_capital ?? 0),
+      annualYield: Number(data.annual_yield ?? 0),
+      monthlyYield: Number(data.monthly_yield ?? 0),
+    });
+    setRefreshingTickers(data.refreshing_tickers);
+    setTotalRefreshCount((current) =>
+      Math.max(current, data.refreshing_tickers.length),
+    );
+    setIsProcessing(data.refreshing_tickers.length > 0);
+    setFundsError("");
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch(`${apiUrl}/investment-funds/recommendations/cached`)
+      .then(async (response) => {
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error();
+        return response.json() as Promise<RecommendationResponse>;
+      })
+      .then((data) => {
+        if (!isMounted || !data) return;
+        const cachedIncome = Number(data.desired_income);
+        applyRecommendation(data);
+        setDesiredIncome(cachedIncome);
+        setRequestedIncome(cachedIncome);
+        setHasRecommendation(true);
+        if (data.refreshing_tickers.length > 0) {
+          setCalculationVersion(0);
+        }
+      })
+      .catch(() => {
+        // O cache é opcional; o dashboard continua disponível para uma nova simulação.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (calculationVersion === null || requestedIncome === null) return;
@@ -50,54 +127,12 @@ export function FinoraDashboard() {
           if (!response.ok) {
             throw new Error("Não foi possível carregar a recomendação.");
           }
-          return response.json() as Promise<{
-            required_capital: number | string | null;
-            annual_yield: number | string | null;
-            monthly_yield: number | string | null;
-            refreshing_tickers: string[];
-            recommendations: Array<{
-              name: string;
-              ticker: string;
-              sector: string;
-              latest_price: number | string;
-              annual_dividend_yield: number | string;
-              allocation_weight: number | string;
-              score: number;
-            }>;
-          }>;
+          return response.json() as Promise<RecommendationResponse>;
         })
         .then((data) => {
           if (!isMounted) return;
-          const mappedFunds = data.recommendations.map((fund) => ({
-            name: fund.name,
-            ticker: fund.ticker,
-            sector: fund.sector ?? "Não informado",
-            referencePrice: Number(fund.latest_price),
-            annualYield: Number(fund.annual_dividend_yield),
-            weight: Number(fund.allocation_weight),
-          }));
-          setFunds(mappedFunds);
-          setRecommendations(
-            data.recommendations.map((fund, index) => ({
-              ...mappedFunds[index],
-              score: fund.score,
-            })),
-          );
-          setRecommendationMetrics({
-            capital: Number(data.required_capital ?? 0),
-            annualYield: Number(data.annual_yield ?? 0),
-            monthlyYield: Number(data.monthly_yield ?? 0),
-          });
-          setRefreshingTickers(data.refreshing_tickers);
-          setTotalRefreshCount((current) =>
-            Math.max(current, data.refreshing_tickers.length),
-          );
-          if (data.refreshing_tickers.length > 0) {
-            setIsProcessing(true);
-          } else {
-            setIsProcessing(false);
-          }
-          setFundsError("");
+          applyRecommendation(data);
+          setHasRecommendation(true);
         })
         .catch((error: Error) => {
           if (!isMounted || error.name === "AbortError") return;
@@ -125,6 +160,7 @@ export function FinoraDashboard() {
     setTotalRefreshCount(0);
     setIsProcessing(false);
     setFundsError("");
+    setHasRecommendation(true);
     setCalculationVersion((version) => (version ?? 0) + 1);
   };
 
@@ -186,7 +222,7 @@ export function FinoraDashboard() {
           {fundsError ? (
             <p className="mt-4 text-sm text-red-200">{fundsError}</p>
           ) : null}
-          {calculationVersion !== null &&
+          {hasRecommendation &&
           !fundsError &&
           !isPortfolioReady ? (
             <p className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
@@ -252,7 +288,7 @@ export function FinoraDashboard() {
                       ),
                     )
                   : 15
-                : calculationVersion !== null
+                : hasRecommendation
                   ? 100
                   : 0
             }
