@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 import logging
@@ -46,6 +47,7 @@ class InvestmentFundPayload(BaseModel):
 
 class InvestmentFundResponse(InvestmentFundPayload):
     id: int
+    updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
 

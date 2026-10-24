@@ -18,9 +18,6 @@ export function FundRecommendations({ funds }: { funds: RecommendedFund[] }) {
             Ranking da base cadastrada, atualizado pelo Funds Explorer.
           </p>
         </div>
-        <span className="rounded-full bg-violet-400/10 px-2 py-1 text-[10px] font-semibold text-violet-200">
-          Score técnico
-        </span>
       </div>
 
       {funds.length === 0 ? (

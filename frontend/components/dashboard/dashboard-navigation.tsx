@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Calculator, Home, Menu, WalletCards, X } from "lucide-react";
+import { Calculator, ChartPie, Home, Menu, WalletCards, X } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 
-type DashboardView = "dashboard" | "funds" | "financial";
+type DashboardView = "dashboard" | "portfolio" | "funds" | "financial";
 
 type DashboardNavigationProps = {
   activeView: DashboardView;
@@ -13,6 +13,12 @@ type DashboardNavigationProps = {
 
 const navigationItems = [
   { href: "/", icon: Home, label: "Dashboard", view: "dashboard" },
+  {
+    href: "/minha-carteira",
+    icon: ChartPie,
+    label: "Minha carteira",
+    view: "portfolio",
+  },
   {
     href: "/fundos",
     icon: WalletCards,

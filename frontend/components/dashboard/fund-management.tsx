@@ -35,6 +35,7 @@ type InvestmentFund = {
   sector: string | null;
   latest_price: number | null;
   annual_dividend_yield: number | null;
+  updated_at: string;
 };
 
 type FundForm = {
@@ -532,6 +533,9 @@ export function FundManagement() {
                   <th className="px-4 py-3 text-right" scope="col">
                     DY anual
                   </th>
+                  <th className="px-4 py-3 text-right" scope="col">
+                    Última atualização
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -539,7 +543,7 @@ export function FundManagement() {
                   <tr>
                     <td
                       className="px-4 py-8 text-center text-zinc-400"
-                      colSpan={6}
+                      colSpan={7}
                     >
                       Carregando fundos...
                     </td>
@@ -548,7 +552,7 @@ export function FundManagement() {
                   <tr>
                     <td
                       className="px-4 py-8 text-center text-zinc-400"
-                      colSpan={6}
+                      colSpan={7}
                     >
                       Nenhum fundo cadastrado.
                     </td>
@@ -584,6 +588,12 @@ export function FundManagement() {
                         {fund.annual_dividend_yield === null
                           ? "—"
                           : `${(fund.annual_dividend_yield * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-zinc-300">
+                        {new Date(fund.updated_at).toLocaleString("pt-BR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
                       </td>
                     </tr>
                   ))

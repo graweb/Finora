@@ -108,7 +108,12 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
           <PieChart className="size-4 text-sky-400" />
           Distribuição por setor
         </h2>
-        <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
+        {data.length === 0 ? (
+          <div className="mt-5 grid h-44 place-items-center rounded-lg border border-dashed border-zinc-700 text-sm text-zinc-400">
+            Sem dados
+          </div>
+        ) : (
+          <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
           <ChartContainer
             config={Object.fromEntries(
               data.map((item) => [
@@ -182,7 +187,8 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
               </div>
             ))}
           </div>
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
