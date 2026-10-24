@@ -1,12 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Download,
   Edit3,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   WalletCards,
   X,
@@ -26,6 +25,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { currency } from "./dashboard-types";
+import {
+  matchesTableColumnFilter,
+  TableColumnFilter,
+  TableColumnFilterButton,
+} from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
 
 type InvestmentFund = {
@@ -60,6 +64,13 @@ type FundListResponse = {
     funds_with_dividend_yield: number;
   };
 };
+type FundFilterKey =
+  | "ticker"
+  | "name"
+  | "sector"
+  | "price"
+  | "dividendYield"
+  | "updatedAt";
 
 const emptyForm: FundForm = {
   ticker: "",
@@ -79,6 +90,31 @@ const emptyFundData: FundListResponse = {
     funds_with_dividend_yield: 0,
   },
 };
+const tablePageSize = 10;
+
+async function fetchAllFunds(): Promise<FundListResponse> {
+  const firstResponse = await fetch(
+    `${apiUrl}/investment-funds?page=1&limit=100`,
+  );
+  if (!firstResponse.ok) throw new Error("Não foi possível carregar os fundos.");
+  const firstPage = (await firstResponse.json()) as FundListResponse;
+  const remainingPages = await Promise.all(
+    Array.from(
+      { length: Math.max(0, firstPage.pagination.total_pages - 1) },
+      (_, index) =>
+        fetch(`${apiUrl}/investment-funds?page=${index + 2}&limit=100`).then(
+          async (response) => {
+            if (!response.ok) throw new Error("Não foi possível carregar os fundos.");
+            return response.json() as Promise<FundListResponse>;
+          },
+        ),
+    ),
+  );
+  return {
+    ...firstPage,
+    items: [firstPage, ...remainingPages].flatMap((response) => response.items),
+  };
+}
 
 function toForm(fund: InvestmentFund): FundForm {
   return {
@@ -105,7 +141,10 @@ function toPayload(form: FundForm) {
 export function FundManagement() {
   const [fundData, setFundData] = useState<FundListResponse>(emptyFundData);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [columnFilters, setColumnFilters] = useState<
+    Partial<Record<FundFilterKey, TableColumnFilter>>
+  >({});
   const [selectedFundIds, setSelectedFundIds] = useState<number[]>([]);
   const [form, setForm] = useState<FundForm>(emptyForm);
   const [editingFund, setEditingFund] = useState<InvestmentFund | null>(null);
@@ -126,13 +165,7 @@ export function FundManagement() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch(
-        `${apiUrl}/investment-funds?page=${page}&limit=10&search=${encodeURIComponent(search.trim())}`,
-      );
-      if (!response.ok) {
-        throw new Error("Não foi possível carregar os fundos.");
-      }
-      setFundData(await response.json());
+      setFundData(await fetchAllFunds());
     } catch {
       setError("Não foi possível carregar os fundos da API.");
     } finally {
@@ -143,15 +176,7 @@ export function FundManagement() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch(
-      `${apiUrl}/investment-funds?page=${page}&limit=10&search=${encodeURIComponent(search.trim())}`,
-    )
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Não foi possível carregar os fundos.");
-        }
-        return response.json() as Promise<FundListResponse>;
-      })
+    fetchAllFunds()
       .then((data) => {
         if (isMounted) setFundData(data);
       })
@@ -165,9 +190,53 @@ export function FundManagement() {
     return () => {
       isMounted = false;
     };
-  }, [page, search]);
+  }, [reloadKey]);
 
-  const funds = fundData.items;
+  const funds = useMemo(
+    () =>
+      fundData.items.filter(
+        (fund) =>
+          matchesTableColumnFilter(fund.ticker, columnFilters.ticker) &&
+          matchesTableColumnFilter(fund.name, columnFilters.name) &&
+          matchesTableColumnFilter(fund.sector ?? "", columnFilters.sector) &&
+          matchesTableColumnFilter(
+            fund.latest_price ?? "",
+            columnFilters.price,
+            "number",
+          ) &&
+          matchesTableColumnFilter(
+            fund.annual_dividend_yield === null
+              ? ""
+              : fund.annual_dividend_yield * 100,
+            columnFilters.dividendYield,
+            "number",
+          ) &&
+          matchesTableColumnFilter(
+            fund.updated_at.slice(0, 10),
+            columnFilters.updatedAt,
+            "date",
+          ),
+      ),
+    [columnFilters, fundData.items],
+  );
+  const totalPages = Math.max(1, Math.ceil(funds.length / tablePageSize));
+  const visibleFunds = funds.slice(
+    (page - 1) * tablePageSize,
+    page * tablePageSize,
+  );
+  const updateColumnFilter = (
+    key: FundFilterKey,
+    filter: TableColumnFilter | null,
+  ) => {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      if (filter) next[key] = filter;
+      else delete next[key];
+      return next;
+    });
+    setPage(1);
+    setSelectedFundIds([]);
+  };
   const selectedFund =
     selectedFundIds.length === 1
       ? (funds.find((fund) => fund.id === selectedFundIds[0]) ?? null)
@@ -183,23 +252,15 @@ export function FundManagement() {
 
   function togglePageSelection() {
     setSelectedFundIds((ids) =>
-      funds.every((fund) => ids.includes(fund.id))
+      visibleFunds.every((fund) => ids.includes(fund.id))
         ? []
-        : funds.map((fund) => fund.id),
+        : visibleFunds.map((fund) => fund.id),
     );
   }
 
   function changePage(nextPage: number) {
     setSelectedFundIds([]);
-    setIsLoading(true);
     setPage(nextPage);
-  }
-
-  function changeSearch(value: string) {
-    setSearch(value);
-    setSelectedFundIds([]);
-    setPage(1);
-    setIsLoading(true);
   }
 
   function openCreateForm() {
@@ -487,15 +548,6 @@ export function FundManagement() {
               {error}
             </p>
           ) : null}
-          <div className="relative mt-4 max-w-sm">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" />
-            <Input
-              value={search}
-              placeholder="Buscar por ticker, nome ou setor"
-              className="border-[#4a4880] bg-[#181642] pl-9 text-white placeholder:text-zinc-400"
-              onChange={(event) => changeSearch(event.target.value)}
-            />
-          </div>
           <p className="mt-4 text-xs text-zinc-400">
             {fundData.totals.total_funds} fundos cadastrados ·{" "}
             {fundData.totals.funds_with_price} com cotação ·{" "}
@@ -510,8 +562,8 @@ export function FundManagement() {
                     <input
                       aria-label="Selecionar todos os fundos desta página"
                       checked={
-                        funds.length > 0 &&
-                        funds.every((fund) => selectedFundIds.includes(fund.id))
+                        visibleFunds.length > 0 &&
+                        visibleFunds.every((fund) => selectedFundIds.includes(fund.id))
                       }
                       className="size-4 accent-sky-400"
                       type="checkbox"
@@ -519,22 +571,54 @@ export function FundManagement() {
                     />
                   </th>
                   <th className="px-4 py-3" scope="col">
-                    Ticker
+                    <TableColumnFilterButton
+                      filter={columnFilters.ticker}
+                      label="Ticker"
+                      onChange={(filter) => updateColumnFilter("ticker", filter)}
+                    />
                   </th>
                   <th className="px-4 py-3" scope="col">
-                    Nome
+                    <TableColumnFilterButton
+                      filter={columnFilters.name}
+                      label="Nome"
+                      onChange={(filter) => updateColumnFilter("name", filter)}
+                    />
                   </th>
                   <th className="min-w-48 px-4 py-3" scope="col">
-                    Setor
+                    <TableColumnFilterButton
+                      filter={columnFilters.sector}
+                      label="Setor"
+                      onChange={(filter) => updateColumnFilter("sector", filter)}
+                    />
                   </th>
                   <th className="px-4 py-3 text-right" scope="col">
-                    Último preço
+                    <TableColumnFilterButton
+                      align="right"
+                      filter={columnFilters.price}
+                      kind="number"
+                      label="Último preço"
+                      onChange={(filter) => updateColumnFilter("price", filter)}
+                    />
                   </th>
                   <th className="px-4 py-3 text-right" scope="col">
-                    DY anual
+                    <TableColumnFilterButton
+                      align="right"
+                      filter={columnFilters.dividendYield}
+                      kind="number"
+                      label="DY anual"
+                      onChange={(filter) =>
+                        updateColumnFilter("dividendYield", filter)
+                      }
+                    />
                   </th>
                   <th className="px-4 py-3 text-right" scope="col">
-                    Última atualização
+                    <TableColumnFilterButton
+                      align="right"
+                      filter={columnFilters.updatedAt}
+                      kind="date"
+                      label="Última atualização"
+                      onChange={(filter) => updateColumnFilter("updatedAt", filter)}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -558,7 +642,7 @@ export function FundManagement() {
                     </td>
                   </tr>
                 ) : (
-                  funds.map((fund) => (
+                  visibleFunds.map((fund) => (
                     <tr
                       key={fund.id}
                       className="border-t border-[#39386a] text-zinc-200 transition-colors hover:bg-[#29275c]/45"
@@ -602,9 +686,9 @@ export function FundManagement() {
             </table>
           </div>
           <TablePagination
-            page={fundData.pagination.page}
-            totalPages={fundData.pagination.total_pages}
-            totalItems={fundData.pagination.total_items}
+            page={page}
+            totalPages={totalPages}
+            totalItems={funds.length}
             onPageChange={changePage}
           />
         </CardContent>

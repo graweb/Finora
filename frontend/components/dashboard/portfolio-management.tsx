@@ -33,6 +33,11 @@ import {
 import { DashboardMetricCard } from "./dashboard-metric-card";
 import { money } from "./dashboard-types";
 import { FundSearchCombobox } from "./fund-search-combobox";
+import {
+  matchesTableColumnFilter,
+  TableColumnFilter,
+  TableColumnFilterButton,
+} from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -77,6 +82,8 @@ type TransactionForm = {
   unitPrice: number;
   occurredOn: string;
 };
+type PortfolioFilterKey = "fund" | "sector" | "quantity" | "value";
+type TransactionFilterKey = "type" | "quantity" | "unitPrice" | "total" | "date";
 
 const emptyPortfolio: PortfolioData = {
   items: [],
@@ -86,6 +93,7 @@ const emptyPortfolio: PortfolioData = {
   total_items: 0,
   total_pages: 1,
 };
+const tablePageSize = 10;
 const createEmptyForm = (): TransactionForm => ({
   fundId: "",
   transactionType: "buy",
@@ -152,6 +160,12 @@ export function PortfolioManagement() {
   const [reloadKey, setReloadKey] = useState(0);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [columnFilters, setColumnFilters] = useState<
+    Partial<Record<PortfolioFilterKey, TableColumnFilter>>
+  >({});
+  const [transactionFilters, setTransactionFilters] = useState<
+    Partial<Record<TransactionFilterKey, TableColumnFilter>>
+  >({});
   const [form, setForm] = useState<TransactionForm>(createEmptyForm);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -166,10 +180,26 @@ export function PortfolioManagement() {
         if (!response.ok) throw new Error();
         return response.json() as Promise<{ items: FundOption[] }>;
       }),
-      fetch(`${apiUrl}/portfolio?page=${page}&limit=10`).then(
+      fetch(`${apiUrl}/portfolio?page=1&limit=100`).then(
         async (response) => {
           if (!response.ok) throw new Error();
-          return response.json() as Promise<PortfolioData>;
+          const firstPage = (await response.json()) as PortfolioData;
+          const remainingPages = await Promise.all(
+            Array.from(
+              { length: Math.max(0, firstPage.total_pages - 1) },
+              (_, index) =>
+                fetch(`${apiUrl}/portfolio?page=${index + 2}&limit=100`).then(
+                  async (nextResponse) => {
+                    if (!nextResponse.ok) throw new Error();
+                    return nextResponse.json() as Promise<PortfolioData>;
+                  },
+                ),
+            ),
+          );
+          return {
+            ...firstPage,
+            items: [firstPage, ...remainingPages].flatMap((item) => item.items),
+          };
         },
       ),
     ])
@@ -184,7 +214,7 @@ export function PortfolioManagement() {
     return () => {
       live = false;
     };
-  }, [page, reloadKey]);
+  }, [reloadKey]);
 
   const transactions = useMemo(
     () => portfolio.items.flatMap((position) => position.transactions),
@@ -195,6 +225,54 @@ export function PortfolioManagement() {
       ? transactions.find((transaction) => transaction.id === selectedIds[0]) ?? null
       : null;
   const selectedTotal = selectedIds.length;
+  const positions = useMemo(
+    () =>
+      portfolio.items.filter(
+        (position) =>
+          matchesTableColumnFilter(
+            `${position.ticker} ${position.name}`,
+            columnFilters.fund,
+          ) &&
+          matchesTableColumnFilter(position.sector, columnFilters.sector) &&
+          matchesTableColumnFilter(
+            position.total_quantity,
+            columnFilters.quantity,
+            "number",
+          ) &&
+          matchesTableColumnFilter(position.total_value, columnFilters.value, "number"),
+      ),
+    [columnFilters, portfolio.items],
+  );
+  const updateColumnFilter = (
+    key: PortfolioFilterKey,
+    filter: TableColumnFilter | null,
+  ) => {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      if (filter) next[key] = filter;
+      else delete next[key];
+      return next;
+    });
+    setPage(1);
+    setExpandedId(null);
+    setSelectedIds([]);
+  };
+  const updateTransactionFilter = (
+    key: TransactionFilterKey,
+    filter: TableColumnFilter | null,
+  ) => {
+    setTransactionFilters((current) => {
+      const next = { ...current };
+      if (filter) next[key] = filter;
+      else delete next[key];
+      return next;
+    });
+  };
+  const totalPages = Math.max(1, Math.ceil(positions.length / tablePageSize));
+  const visiblePositions = positions.slice(
+    (page - 1) * tablePageSize,
+    page * tablePageSize,
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -382,19 +460,76 @@ export function PortfolioManagement() {
                 <thead className="border-b border-zinc-800 text-xs font-bold tracking-wide text-sky-200 uppercase">
                   <tr>
                     <th className="w-10 px-4 py-4" />
-                    <th className="px-3 py-4">FII</th>
-                    <th className="px-3 py-4">Setor</th>
-                    <th className="px-3 py-4 text-right">Quantidade total</th>
-                    <th className="px-4 py-4 text-right">Valor total</th>
+                    <th className="px-3 py-4">
+                      <TableColumnFilterButton
+                        filter={columnFilters.fund}
+                        label="FII"
+                        onChange={(filter) => updateColumnFilter("fund", filter)}
+                      />
+                    </th>
+                    <th className="px-3 py-4">
+                      <TableColumnFilterButton
+                        filter={columnFilters.sector}
+                        label="Setor"
+                        onChange={(filter) => updateColumnFilter("sector", filter)}
+                      />
+                    </th>
+                    <th className="px-3 py-4 text-right">
+                      <TableColumnFilterButton
+                        align="right"
+                        filter={columnFilters.quantity}
+                        kind="number"
+                        label="Quantidade total"
+                        onChange={(filter) =>
+                          updateColumnFilter("quantity", filter)
+                        }
+                      />
+                    </th>
+                    <th className="px-4 py-4 text-right">
+                      <TableColumnFilterButton
+                        align="right"
+                        filter={columnFilters.value}
+                        kind="number"
+                        label="Valor total"
+                        onChange={(filter) => updateColumnFilter("value", filter)}
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolio.items.map((position) => {
+                  {visiblePositions.map((position) => {
                     const isExpanded = expandedId === position.fund_id;
+                    const filteredTransactions = position.transactions.filter(
+                      (transaction) =>
+                        matchesTableColumnFilter(
+                          transaction.transaction_type === "buy" ? "Compra" : "Venda",
+                          transactionFilters.type,
+                        ) &&
+                        matchesTableColumnFilter(
+                          transaction.quantity,
+                          transactionFilters.quantity,
+                          "number",
+                        ) &&
+                        matchesTableColumnFilter(
+                          transaction.unit_price,
+                          transactionFilters.unitPrice,
+                          "number",
+                        ) &&
+                        matchesTableColumnFilter(
+                          transaction.total_amount,
+                          transactionFilters.total,
+                          "number",
+                        ) &&
+                        matchesTableColumnFilter(
+                          transaction.occurred_on,
+                          transactionFilters.date,
+                          "date",
+                        ),
+                    );
                     return (
                       <Fragment key={position.fund_id}>
                         <tr
-                          className="cursor-pointer border-b border-zinc-800 text-zinc-300 transition-colors hover:bg-zinc-900"
+                          className="cursor-pointer border-b border-zinc-800 text-zinc-300 transition-colors hover:bg-[#29275c]/45"
                           onClick={() =>
                             setExpandedId(isExpanded ? null : position.fund_id)
                           }
@@ -433,18 +568,66 @@ export function PortfolioManagement() {
                                   <thead className="text-left text-xs text-zinc-500">
                                     <tr>
                                       <th className="w-9 pb-2" />
-                                      <th className="pb-2">Tipo</th>
-                                      <th className="pb-2 text-right">Quantidade</th>
-                                      <th className="pb-2 text-right">Valor unitário</th>
-                                      <th className="pb-2 text-right">Valor total</th>
-                                      <th className="pb-2 text-right">Data</th>
+                                      <th className="pb-2">
+                                        <TableColumnFilterButton
+                                          filter={transactionFilters.type}
+                                          label="Tipo"
+                                          onChange={(filter) =>
+                                            updateTransactionFilter("type", filter)
+                                          }
+                                        />
+                                      </th>
+                                      <th className="pb-2 text-right">
+                                        <TableColumnFilterButton
+                                          align="right"
+                                          filter={transactionFilters.quantity}
+                                          kind="number"
+                                          label="Quantidade"
+                                          onChange={(filter) =>
+                                            updateTransactionFilter("quantity", filter)
+                                          }
+                                        />
+                                      </th>
+                                      <th className="pb-2 text-right">
+                                        <TableColumnFilterButton
+                                          align="right"
+                                          filter={transactionFilters.unitPrice}
+                                          kind="number"
+                                          label="Valor unitário"
+                                          onChange={(filter) =>
+                                            updateTransactionFilter("unitPrice", filter)
+                                          }
+                                        />
+                                      </th>
+                                      <th className="pb-2 text-right">
+                                        <TableColumnFilterButton
+                                          align="right"
+                                          filter={transactionFilters.total}
+                                          kind="number"
+                                          label="Valor total"
+                                          onChange={(filter) =>
+                                            updateTransactionFilter("total", filter)
+                                          }
+                                        />
+                                      </th>
+                                      <th className="pb-2 text-right">
+                                        <TableColumnFilterButton
+                                          align="right"
+                                          filter={transactionFilters.date}
+                                          kind="date"
+                                          label="Data"
+                                          onChange={(filter) =>
+                                            updateTransactionFilter("date", filter)
+                                          }
+                                        />
+                                      </th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {position.transactions.map((transaction) => (
+                                    {filteredTransactions.map((transaction) => (
                                       <tr
                                         key={transaction.id}
-                                        className="border-t border-zinc-800 text-zinc-300"
+                                        className="border-t border-zinc-800 text-zinc-300 transition-colors hover:bg-[#29275c]/45"
                                       >
                                         <td className="py-3">
                                           <input
@@ -476,6 +659,16 @@ export function PortfolioManagement() {
                                         </td>
                                       </tr>
                                     ))}
+                                    {filteredTransactions.length === 0 ? (
+                                      <tr>
+                                        <td
+                                          className="py-4 text-center text-zinc-400"
+                                          colSpan={6}
+                                        >
+                                          Nenhum lançamento encontrado para os filtros informados.
+                                        </td>
+                                      </tr>
+                                    ) : null}
                                   </tbody>
                                 </table>
                               </div>
@@ -487,17 +680,17 @@ export function PortfolioManagement() {
                   })}
                 </tbody>
               </table>
-              {portfolio.items.length === 0 ? (
+              {positions.length === 0 ? (
                 <p className="py-12 text-center text-sm text-zinc-400">
-                  Nenhum lançamento cadastrado na carteira.
+                  Nenhum FII encontrado para os filtros informados.
                 </p>
               ) : null}
             </div>
             <div className="px-5 pb-4">
               <TablePagination
-                page={portfolio.page}
-                totalItems={portfolio.total_items}
-                totalPages={portfolio.total_pages}
+                page={page}
+                totalItems={positions.length}
+                totalPages={totalPages}
                 onPageChange={(nextPage) => {
                   setExpandedId(null);
                   setSelectedIds([]);

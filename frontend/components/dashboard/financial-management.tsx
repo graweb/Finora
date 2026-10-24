@@ -34,6 +34,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { currency } from "./dashboard-types";
+import {
+  matchesTableColumnFilter,
+  TableColumnFilter,
+  TableColumnFilterButton,
+} from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
 
 type Destination = "fisica" | "juridica";
@@ -72,12 +77,22 @@ type AccountForm = {
   originalAmount: string;
   dueOn: string;
 };
+type AccountFilterKey =
+  | "description"
+  | "destination"
+  | "accountType"
+  | "dueOn"
+  | "originalAmount"
+  | "paidAmount"
+  | "outstandingAmount"
+  | "status";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const emptyAccounts: AccountList = {
   items: [],
   pagination: { page: 1, limit: 10, total_items: 0, total_pages: 1 },
 };
+const tablePageSize = 10;
 const emptyTotals: Totals = {
   fisica: { income: 0, expense: 0 },
   juridica: { income: 0, expense: 0 },
@@ -248,6 +263,9 @@ export function FinancialManagement() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [columnFilters, setColumnFilters] = useState<
+    Partial<Record<AccountFilterKey, TableColumnFilter>>
+  >({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -274,26 +292,44 @@ export function FinancialManagement() {
     let live = true;
     const destination = view === "all" ? "" : `&destination=${view}`;
     Promise.all([
-      fetch(
-        `${apiUrl}/financial-accounts?page=${page}&limit=10&year=${period.year}&month=${period.month}${destination}`,
-      ),
+      fetch(`${apiUrl}/financial-accounts?page=1&limit=100&year=${period.year}&month=${period.month}${destination}`)
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Não foi possível carregar o controle financeiro.");
+          }
+          const firstPage = (await response.json()) as AccountList;
+          const remainingPages = await Promise.all(
+            Array.from(
+              { length: Math.max(0, firstPage.pagination.total_pages - 1) },
+              (_, index) =>
+                fetch(
+                  `${apiUrl}/financial-accounts?page=${index + 2}&limit=100&year=${period.year}&month=${period.month}${destination}`,
+                ).then(async (nextResponse) => {
+                  if (!nextResponse.ok) {
+                    throw new Error("Não foi possível carregar o controle financeiro.");
+                  }
+                  return nextResponse.json() as Promise<AccountList>;
+                }),
+            ),
+          );
+          return {
+            ...firstPage,
+            items: [firstPage, ...remainingPages].flatMap((item) => item.items),
+          };
+        }),
       fetch(
         `${apiUrl}/financial-movements?year=${period.year}&month=${period.month}&page=1&limit=1`,
-      ),
-    ])
-      .then(async ([accounts, movements]) => {
-        if (!accounts.ok || !movements.ok)
+      ).then(async (response) => {
+        if (!response.ok) {
           throw new Error("Não foi possível carregar o controle financeiro.");
-        return [
-          (await accounts.json()) as AccountList,
-          (await movements.json()) as { totals: Totals },
-        ] as const;
-      })
-      .then(([accounts, movements]) => {
-        if (live) {
-          setData(accounts);
-          setTotals(movements.totals);
         }
+        return response.json() as Promise<{ totals: Totals }>;
+      }),
+    ])
+      .then(([accounts, movements]) => {
+        if (!live) return;
+        setData(accounts);
+        setTotals(movements.totals);
       })
       .catch((reason) => {
         if (live)
@@ -309,18 +345,68 @@ export function FinancialManagement() {
     return () => {
       live = false;
     };
-  }, [page, period, reloadKey, view]);
+  }, [period, reloadKey, view]);
 
   const accounts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("pt-BR");
-    return query
+    const searchedAccounts = query
       ? data.items.filter((item) =>
           `${item.counterparty} ${item.description}`
             .toLocaleLowerCase("pt-BR")
             .includes(query),
         )
       : data.items;
-  }, [data.items, search]);
+    return searchedAccounts.filter(
+      (account) =>
+        matchesTableColumnFilter(
+          account.description,
+          columnFilters.description,
+        ) &&
+        matchesTableColumnFilter(
+          account.destination === "fisica" ? "Pessoa física" : "Pessoa jurídica",
+          columnFilters.destination,
+        ) &&
+        matchesTableColumnFilter(
+          account.account_type === "receivable" ? "A receber" : "A pagar",
+          columnFilters.accountType,
+        ) &&
+        matchesTableColumnFilter(account.due_on, columnFilters.dueOn, "date") &&
+        matchesTableColumnFilter(
+          account.original_amount,
+          columnFilters.originalAmount,
+          "number",
+        ) &&
+        matchesTableColumnFilter(
+          account.paid_amount,
+          columnFilters.paidAmount,
+          "number",
+        ) &&
+        matchesTableColumnFilter(
+          account.outstanding_amount,
+          columnFilters.outstandingAmount,
+          "number",
+        ) &&
+        matchesTableColumnFilter(account.status, columnFilters.status),
+    );
+  }, [columnFilters, data.items, search]);
+  const updateColumnFilter = (
+    key: AccountFilterKey,
+    filter: TableColumnFilter | null,
+  ) => {
+    setColumnFilters((current) => {
+      const next = { ...current };
+      if (filter) next[key] = filter;
+      else delete next[key];
+      return next;
+    });
+    setPage(1);
+    setSelectedIds([]);
+  };
+  const totalPages = Math.max(1, Math.ceil(accounts.length / tablePageSize));
+  const visibleAccounts = accounts.slice(
+    (page - 1) * tablePageSize,
+    page * tablePageSize,
+  );
   const selected =
     selectedIds.length === 1
       ? data.items.find((item) => item.id === selectedIds[0]) ?? null
@@ -333,7 +419,8 @@ export function FinancialManagement() {
     selectedAccounts.length > 0 &&
     selectedAccounts.every((account) => account.status === "open");
   const allVisibleSelected =
-    accounts.length > 0 && accounts.every((account) => selectedIds.includes(account.id));
+    visibleAccounts.length > 0 &&
+    visibleAccounts.every((account) => selectedIds.includes(account.id));
   const years = period
     ? Array.from({ length: 7 }, (_, index) => period.year - 3 + index)
     : [];
@@ -350,7 +437,6 @@ export function FinancialManagement() {
     setExpandedId(null);
   };
   const changePage = (nextPage: number) => {
-    setLoading(true);
     setPage(nextPage);
     setSelectedIds([]);
   };
@@ -685,7 +771,11 @@ export function FinancialManagement() {
                       className="h-10 border-[#4a4880] bg-[#181642] pl-9 text-white placeholder:text-zinc-400"
                       placeholder="Buscar por pessoa ou descrição..."
                       value={search}
-                      onChange={(event) => setSearch(event.target.value)}
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
                     />
                   </div>
                   <TooltipProvider>
@@ -772,21 +862,92 @@ export function FinancialManagement() {
                               setSelectedIds(
                                 allVisibleSelected
                                   ? []
-                                  : accounts.map((account) => account.id),
+                              : visibleAccounts.map((account) => account.id),
                               )
                             }
                           />
                         ) : null}
                       </th>
                       <th className="w-10 px-4 py-4" />
-                      <th className="px-3 py-4">Descrição</th>
-                      <th className="px-3 py-4">Tipo de pessoa</th>
-                      <th className="px-3 py-4">Tipo</th>
-                      <th className="px-3 py-4">Vencimento</th>
-                      <th className="px-3 py-4 text-right">Valor original</th>
-                      <th className="px-3 py-4 text-right">Pago</th>
-                      <th className="px-3 py-4 text-right">Saldo</th>
-                      <th className="px-3 py-4">Status</th>
+                      <th className="px-3 py-4">
+                        <TableColumnFilterButton
+                          filter={columnFilters.description}
+                          label="Descrição"
+                          onChange={(filter) =>
+                            updateColumnFilter("description", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4">
+                        <TableColumnFilterButton
+                          filter={columnFilters.destination}
+                          label="Tipo de pessoa"
+                          onChange={(filter) =>
+                            updateColumnFilter("destination", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4">
+                        <TableColumnFilterButton
+                          filter={columnFilters.accountType}
+                          label="Tipo"
+                          onChange={(filter) =>
+                            updateColumnFilter("accountType", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4">
+                        <TableColumnFilterButton
+                          filter={columnFilters.dueOn}
+                          kind="date"
+                          label="Vencimento"
+                          onChange={(filter) =>
+                            updateColumnFilter("dueOn", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4 text-right">
+                        <TableColumnFilterButton
+                          align="right"
+                          filter={columnFilters.originalAmount}
+                          kind="number"
+                          label="Valor original"
+                          onChange={(filter) =>
+                            updateColumnFilter("originalAmount", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4 text-right">
+                        <TableColumnFilterButton
+                          align="right"
+                          filter={columnFilters.paidAmount}
+                          kind="number"
+                          label="Pago"
+                          onChange={(filter) =>
+                            updateColumnFilter("paidAmount", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4 text-right">
+                        <TableColumnFilterButton
+                          align="right"
+                          filter={columnFilters.outstandingAmount}
+                          kind="number"
+                          label="Saldo"
+                          onChange={(filter) =>
+                            updateColumnFilter("outstandingAmount", filter)
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-4">
+                        <TableColumnFilterButton
+                          filter={columnFilters.status}
+                          label="Status"
+                          onChange={(filter) =>
+                            updateColumnFilter("status", filter)
+                          }
+                        />
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -809,7 +970,7 @@ export function FinancialManagement() {
                         </td>
                       </tr>
                     ) : (
-                      accounts.map((account) => (
+                      visibleAccounts.map((account) => (
                         <AccountRow
                           key={account.id}
                           account={account}
@@ -837,8 +998,8 @@ export function FinancialManagement() {
               <div className="px-5 pb-4">
                 <TablePagination
                   page={data.pagination.page}
-                  totalPages={data.pagination.total_pages}
-                  totalItems={data.pagination.total_items}
+                  totalPages={totalPages}
+                  totalItems={accounts.length}
                   onPageChange={changePage}
                 />
               </div>
@@ -947,7 +1108,7 @@ function AccountRow({
             onClick={onToggle}
           >
             <ChevronDown
-              className={`size-4 transition-transform ${expanded ? "rotate-180" : "-rotate-90"}`}
+              className={`size-4 text-sky-400 transition-transform ${expanded ? "rotate-180" : "-rotate-90"}`}
             />
           </Button>
         </td>
