@@ -645,7 +645,8 @@ export function FundManagement() {
                   visibleFunds.map((fund) => (
                     <tr
                       key={fund.id}
-                      className="border-t border-[#39386a] text-zinc-200 transition-colors hover:bg-[#29275c]/45"
+                      className="cursor-pointer border-t border-[#39386a] text-zinc-200 transition-colors hover:bg-[#29275c]/45"
+                      onClick={() => toggleFundSelection(fund.id)}
                     >
                       <td className="px-4 py-3">
                         <input
@@ -653,6 +654,7 @@ export function FundManagement() {
                           checked={selectedFundIds.includes(fund.id)}
                           className="size-4 accent-sky-400"
                           type="checkbox"
+                          onClick={(event) => event.stopPropagation()}
                           onChange={() => toggleFundSelection(fund.id)}
                         />
                       </td>

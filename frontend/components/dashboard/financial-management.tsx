@@ -8,7 +8,6 @@ import {
   Edit3,
   Landmark,
   Plus,
-  Search,
   Trash2,
   UserRound,
   X,
@@ -175,7 +174,7 @@ function Metric({
     <div className="min-w-0 px-3 first:pl-0 last:pr-0">
       <p className="text-xs text-zinc-400">{label}</p>
       <p
-        className={`truncate pt-1 text-sm font-semibold sm:text-base ${color}`}
+        className={`truncate pt-1 text-lg font-semibold lg:text-2xl ${color}`}
       >
         {currency.format(value)}
       </p>
@@ -262,7 +261,6 @@ export function FinancialManagement() {
   const [totals, setTotals] = useState<Totals>(emptyTotals);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<
     Partial<Record<AccountFilterKey, TableColumnFilter>>
   >({});
@@ -348,15 +346,7 @@ export function FinancialManagement() {
   }, [period, reloadKey, view]);
 
   const accounts = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("pt-BR");
-    const searchedAccounts = query
-      ? data.items.filter((item) =>
-          `${item.counterparty} ${item.description}`
-            .toLocaleLowerCase("pt-BR")
-            .includes(query),
-        )
-      : data.items;
-    return searchedAccounts.filter(
+    return data.items.filter(
       (account) =>
         matchesTableColumnFilter(
           account.description,
@@ -388,7 +378,7 @@ export function FinancialManagement() {
         ) &&
         matchesTableColumnFilter(account.status, columnFilters.status),
     );
-  }, [columnFilters, data.items, search]);
+  }, [columnFilters, data.items]);
   const updateColumnFilter = (
     key: AccountFilterKey,
     filter: TableColumnFilter | null,
@@ -693,23 +683,123 @@ export function FinancialManagement() {
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
           Controle financeiro
         </h1>
-        <div className="mt-5 inline-flex w-full max-w-175 rounded-xl border border-[#3a3973] bg-[#1b1947] p-1 sm:w-auto">
-          {(
-            [
-              ["all", "Visão consolidada"],
-              ["fisica", "Pessoa física"],
-              ["juridica", "Pessoa jurídica"],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              key={value}
-              variant="ghost"
-              className={`flex-1 px-5 ${view === value ? "bg-sky-500 text-slate-950 hover:bg-sky-400 hover:text-slate-950" : "text-zinc-300 hover:bg-[#302e67] hover:text-white"}`}
-              onClick={() => setCurrentView(value)}
+        <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="inline-flex w-full max-w-175 rounded-xl border border-[#3a3973] bg-[#1b1947] p-1 sm:w-auto">
+            {(
+              [
+                ["all", "Visão consolidada"],
+                ["fisica", "Pessoa física"],
+                ["juridica", "Pessoa jurídica"],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                variant="ghost"
+                className={`flex-1 px-5 ${view === value ? "bg-sky-500 text-slate-950 hover:bg-sky-400 hover:text-slate-950" : "text-zinc-300 hover:bg-[#302e67] hover:text-white"}`}
+                onClick={() => setCurrentView(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <select
+              aria-label="Mês"
+              value={period?.month ?? ""}
+              disabled={!period}
+              onChange={(event) =>
+                changePeriod(period?.year ?? 2026, Number(event.target.value))
+              }
+              className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
             >
-              {label}
-            </Button>
-          ))}
+              {Array.from({ length: 12 }, (_, index) =>
+                new Intl.DateTimeFormat("pt-BR", {
+                  month: "long",
+                }).format(new Date(2026, index, 1)),
+              ).map((month, index) => (
+                <option key={month} value={index + 1}>
+                  {month[0].toUpperCase() + month.slice(1)}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Ano"
+              value={period?.year ?? ""}
+              disabled={!period}
+              onChange={(event) =>
+                changePeriod(Number(event.target.value), period?.month ?? 1)
+              }
+              className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+            <TooltipProvider>
+              <div className="flex flex-wrap gap-2">
+                <ActionTooltip label="Nova conta">
+                  <Button
+                    size="icon-lg"
+                    aria-label="Nova conta"
+                    className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
+                    onClick={openCreate}
+                  >
+                    <Plus />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Duplicar contas selecionadas">
+                  <Button
+                    variant="outline"
+                    size="icon-lg"
+                    aria-label="Duplicar contas selecionadas"
+                    disabled={selectedIds.length === 0 || saving}
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={() => void duplicateAccounts()}
+                  >
+                    <Copy />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Editar conta">
+                  <Button
+                    variant="outline"
+                    size="icon-lg"
+                    aria-label="Editar conta"
+                    disabled={!selected || selected.status === "settled"}
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={() => selected && openEdit(selected)}
+                  >
+                    <Edit3 />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Quitar contas selecionadas">
+                  <Button
+                    variant="outline"
+                    size="icon-lg"
+                    aria-label="Quitar contas selecionadas"
+                    disabled={selectedIds.length === 0}
+                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+                    onClick={openBulkSettlement}
+                  >
+                    <Landmark />
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label="Excluir conta">
+                  <Button
+                    variant="destructive"
+                    size="icon-lg"
+                    aria-label="Excluir conta"
+                    disabled={!canSettleSelected}
+                    className="size-10"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </ActionTooltip>
+              </div>
+            </TooltipProvider>
+          </div>
         </div>
         <div className="mt-5 grid gap-4 xl:grid-cols-2">
           <MetricGroup destination="fisica" totals={totals.fisica} />
@@ -722,125 +812,6 @@ export function FinancialManagement() {
                 <h2 className="text-2xl font-semibold text-white">
                   Contas a receber e a pagar
                 </h2>
-                <div className="mt-5 flex flex-col gap-3 lg:flex-row">
-                  <div className="flex gap-2">
-                    <select
-                      aria-label="Mês"
-                      value={period?.month ?? ""}
-                      disabled={!period}
-                      onChange={(event) =>
-                        changePeriod(
-                          period?.year ?? 2026,
-                          Number(event.target.value),
-                        )
-                      }
-                      className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
-                    >
-                      {Array.from({ length: 12 }, (_, index) =>
-                        new Intl.DateTimeFormat("pt-BR", {
-                          month: "long",
-                        }).format(new Date(2026, index, 1)),
-                      ).map((month, index) => (
-                        <option key={month} value={index + 1}>
-                          {month[0].toUpperCase() + month.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="Ano"
-                      value={period?.year ?? ""}
-                      disabled={!period}
-                      onChange={(event) =>
-                        changePeriod(
-                          Number(event.target.value),
-                          period?.month ?? 1,
-                        )
-                      }
-                      className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
-                    >
-                      {years.map((year) => (
-                        <option key={year} value={year}>
-                          {year}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="relative min-w-0 flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-3 size-4 text-zinc-500" />
-                    <Input
-                      className="h-10 border-[#4a4880] bg-[#181642] pl-9 text-white placeholder:text-zinc-400"
-                      placeholder="Buscar por pessoa ou descrição..."
-                      value={search}
-                      onChange={(event) => {
-                        setSearch(event.target.value);
-                        setPage(1);
-                        setSelectedIds([]);
-                      }}
-                    />
-                  </div>
-                  <TooltipProvider>
-                    <div className="flex flex-wrap gap-2">
-                      <ActionTooltip label="Nova conta">
-                        <Button
-                          size="icon-lg"
-                          aria-label="Nova conta"
-                          className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
-                          onClick={openCreate}
-                        >
-                          <Plus />
-                        </Button>
-                      </ActionTooltip>
-                      <ActionTooltip label="Duplicar contas selecionadas">
-                        <Button
-                          variant="outline"
-                          size="icon-lg"
-                          aria-label="Duplicar contas selecionadas"
-                          disabled={selectedIds.length === 0 || saving}
-                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                          onClick={() => void duplicateAccounts()}
-                        >
-                          <Copy />
-                        </Button>
-                      </ActionTooltip>
-                      <ActionTooltip label="Editar conta">
-                        <Button
-                          variant="outline"
-                          size="icon-lg"
-                          aria-label="Editar conta"
-                          disabled={!selected || selected.status === "settled"}
-                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                          onClick={() => selected && openEdit(selected)}
-                        >
-                          <Edit3 />
-                        </Button>
-                      </ActionTooltip>
-                      <ActionTooltip label="Quitar contas selecionadas">
-                        <Button
-                          variant="outline"
-                          size="icon-lg"
-                          aria-label="Quitar contas selecionadas"
-                          disabled={selectedIds.length === 0}
-                          className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                          onClick={openBulkSettlement}
-                        >
-                          <Landmark />
-                        </Button>
-                      </ActionTooltip>
-                      <ActionTooltip label="Excluir conta">
-                        <Button
-                          variant="destructive"
-                          size="icon-lg"
-                          aria-label="Excluir conta"
-                          disabled={!canSettleSelected}
-                          className="size-10"
-                          onClick={() => setDeleteOpen(true)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </ActionTooltip>
-                    </div>
-                  </TooltipProvider>
-                </div>
               </div>
               {error ? (
                 <p className="mx-5 mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">

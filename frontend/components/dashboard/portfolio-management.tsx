@@ -627,7 +627,8 @@ export function PortfolioManagement() {
                                     {filteredTransactions.map((transaction) => (
                                       <tr
                                         key={transaction.id}
-                                        className="border-t border-zinc-800 text-zinc-300 transition-colors hover:bg-[#29275c]/45"
+                                        className="cursor-pointer border-t border-zinc-800 text-zinc-300 transition-colors hover:bg-[#29275c]/45"
+                                        onClick={() => toggleSelection(transaction.id)}
                                       >
                                         <td className="py-3">
                                           <input
@@ -635,6 +636,7 @@ export function PortfolioManagement() {
                                             checked={selectedIds.includes(transaction.id)}
                                             className="size-4 accent-sky-400"
                                             type="checkbox"
+                                            onClick={(event) => event.stopPropagation()}
                                             onChange={() => toggleSelection(transaction.id)}
                                           />
                                         </td>
