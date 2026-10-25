@@ -48,12 +48,22 @@ export function AllocationBars({
         >
           <BarChart data={data} margin={{ top: 8, right: 4, left: -20 }}>
             <defs>
-              <linearGradient id="allocation-gradient" x1="0" x2="0" y1="1" y2="0">
+              <linearGradient
+                id="allocation-gradient"
+                x1="0"
+                x2="0"
+                y1="1"
+                y2="0"
+              >
                 <stop offset="0%" stopColor="#7c3aed" />
                 <stop offset="100%" stopColor="#38bdf8" />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="#3a3973" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid
+              stroke="#3a3973"
+              strokeDasharray="3 3"
+              vertical={false}
+            />
             <XAxis
               axisLine={false}
               dataKey="ticker"
@@ -87,7 +97,8 @@ export function AllocationBars({
           </BarChart>
         </ChartContainer>
         <p className="mt-3 text-xs text-zinc-400">
-          Montante distribuído: <b className="text-zinc-100">{money.format(capital)}</b>
+          Montante distribuído:{" "}
+          <b className="text-zinc-100">{money.format(capital)}</b>
         </p>
       </CardContent>
     </Card>
@@ -114,79 +125,82 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
           </div>
         ) : (
           <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
-          <ChartContainer
-            config={Object.fromEntries(
-              data.map((item) => [
-                item.sector,
-                { label: item.sector, color: item.color },
-              ]),
-            )}
-            className="size-44 shrink-0"
-          >
-            <RechartsPieChart>
-              <Tooltip
-                content={
-                  <ChartTooltipContent
-                    valueFormatter={(value) =>
-                      value.toLocaleString("pt-BR", {
-                        maximumFractionDigits: 1,
-                      }) + "%"
-                    }
-                  />
-                }
-              />
-              <Pie
-                data={data}
-                dataKey="allocation"
-                innerRadius={47}
-                nameKey="sector"
-                outerRadius={68}
-                paddingAngle={3}
-                stroke="none"
-              >
-                {data.map((item) => (
-                  <Cell fill={item.color} key={item.sector} />
-                ))}
-              </Pie>
-              <text
-                fill="white"
-                textAnchor="middle"
-                x="50%"
-                y="47%"
-                className="text-lg font-semibold"
-              >
-                100%
-              </text>
-              <text
-                fill="#a1a1aa"
-                textAnchor="middle"
-                x="50%"
-                y="60%"
-                className="text-[10px]"
-              >
-                carteira
-              </text>
-            </RechartsPieChart>
-          </ChartContainer>
-          <div className="min-w-0 flex-1 space-y-3 sm:pl-2">
-            {data.map(({ sector, allocation, color }) => (
-              <div
-                className="flex items-center justify-between gap-4 text-xs"
-                key={sector}
-              >
-                <span className="flex items-center gap-2 text-zinc-300">
-                  <i className="size-2 rounded-full" style={{ background: color }} />
-                  {sector}
-                </span>
-                <b className="text-zinc-100">
-                  {allocation.toLocaleString("pt-BR", {
-                    maximumFractionDigits: 1,
-                  })}
-                  %
-                </b>
-              </div>
-            ))}
-          </div>
+            <ChartContainer
+              config={Object.fromEntries(
+                data.map((item) => [
+                  item.sector,
+                  { label: item.sector, color: item.color },
+                ]),
+              )}
+              className="size-44 shrink-0"
+            >
+              <RechartsPieChart>
+                <Tooltip
+                  content={
+                    <ChartTooltipContent
+                      valueFormatter={(value) =>
+                        value.toLocaleString("pt-BR", {
+                          maximumFractionDigits: 1,
+                        }) + "%"
+                      }
+                    />
+                  }
+                />
+                <Pie
+                  data={data}
+                  dataKey="allocation"
+                  innerRadius={47}
+                  nameKey="sector"
+                  outerRadius={68}
+                  paddingAngle={3}
+                  stroke="none"
+                >
+                  {data.map((item) => (
+                    <Cell fill={item.color} key={item.sector} />
+                  ))}
+                </Pie>
+                <text
+                  fill="white"
+                  textAnchor="middle"
+                  x="50%"
+                  y="47%"
+                  className="text-lg font-semibold"
+                >
+                  100%
+                </text>
+                <text
+                  fill="#a1a1aa"
+                  textAnchor="middle"
+                  x="50%"
+                  y="60%"
+                  className="text-[10px]"
+                >
+                  carteira
+                </text>
+              </RechartsPieChart>
+            </ChartContainer>
+            <div className="min-w-0 flex-1 space-y-3 sm:pl-2">
+              {data.map(({ sector, allocation, color }) => (
+                <div
+                  className="flex items-center justify-between gap-4 text-xs"
+                  key={sector}
+                >
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <i
+                      className="size-2 rounded-full"
+                      style={{ background: color }}
+                    />
+                    {sector}
+                  </span>
+                  <b className="text-zinc-100">
+                    {allocation.toLocaleString("pt-BR", {
+                      maximumFractionDigits: 1,
+                    })}
+                    %
+                  </b>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </CardContent>

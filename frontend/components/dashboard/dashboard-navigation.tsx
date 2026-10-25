@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Calculator, ChartPie, Home, Menu, WalletCards, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Calculator, ChartPie, Cog, Home, Menu, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Tooltip,
@@ -26,21 +27,28 @@ const navigationItems = [
     view: "portfolio",
   },
   {
-    href: "/fundos",
-    icon: WalletCards,
-    label: "Fundos imobiliários",
-    view: "funds",
-  },
-  {
     href: "/movimentacoes",
     icon: Calculator,
     label: "Controle financeiro",
     view: "financial",
   },
+  {
+    href: "/fundos",
+    icon: Cog,
+    label: "Fundos imobiliários",
+    view: "funds",
+  },
 ] as const;
 
 export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const navigationSequence = useRef(0);
+  const router = useRouter();
+
+  const navigateTo = (href: string) => {
+    navigationSequence.current += 1;
+    router.push(`${href}?tabReset=${navigationSequence.current}`);
+  };
 
   return (
     <>
@@ -52,7 +60,11 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
         className="fixed top-4 left-4 z-50 grid size-10 place-items-center rounded-lg border border-[#4a4880] bg-[#242351] text-white shadow-lg lg:hidden"
         onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
       >
-        {isMobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+        {isMobileMenuOpen ? (
+          <X className="size-5" />
+        ) : (
+          <Menu className="size-5" />
+        )}
       </button>
 
       {isMobileMenuOpen ? (
@@ -86,7 +98,11 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
                 }`,
               })}
               key={href}
-              onClick={() => setIsMobileMenuOpen(false)}
+              onClick={(event) => {
+                event.preventDefault();
+                setIsMobileMenuOpen(false);
+                navigateTo(href);
+              }}
             >
               <Icon className="size-5" />
               {label}
@@ -110,6 +126,10 @@ export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
                       className:
                         activeView === view ? "text-sky-400" : "text-zinc-300",
                     })}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigateTo(href);
+                    }}
                   >
                     <Icon className="size-6" />
                   </Link>

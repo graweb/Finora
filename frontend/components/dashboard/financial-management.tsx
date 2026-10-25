@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -26,12 +27,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ActionTooltip } from "./action-tooltip";
 import { currency } from "./dashboard-types";
 import {
   matchesTableColumnFilter,
@@ -39,6 +36,8 @@ import {
   TableColumnFilterButton,
 } from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
+import { YearSelect } from "./year-select";
+import { PageHeader } from "./page-header";
 
 type Destination = "fisica" | "juridica";
 type AccountType = "receivable" | "payable";
@@ -173,9 +172,7 @@ function Metric({
   return (
     <div className="min-w-0 px-3 first:pl-0 last:pr-0">
       <p className="text-xs text-zinc-400">{label}</p>
-      <p
-        className={`truncate pt-1 text-lg font-semibold lg:text-2xl ${color}`}
-      >
+      <p className={`truncate pt-1 text-lg font-semibold lg:text-2xl ${color}`}>
         {currency.format(value)}
       </p>
     </div>
@@ -233,24 +230,24 @@ function Modal({
   );
 }
 
-function ActionTooltip({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+export function FinancialManagement() {
   return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>
-        {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <Suspense fallback={null}>
+      <FinancialManagementWithReset />
+    </Suspense>
   );
 }
 
-export function FinancialManagement() {
+function FinancialManagementWithReset() {
+  const searchParams = useSearchParams();
+  return (
+    <FinancialManagementContent
+      key={searchParams.get("tabReset") ?? "default"}
+    />
+  );
+}
+
+function FinancialManagementContent() {
   const [period, setPeriod] = useState<{ year: number; month: number } | null>(
     null,
   );
@@ -290,31 +287,34 @@ export function FinancialManagement() {
     let live = true;
     const destination = view === "all" ? "" : `&destination=${view}`;
     Promise.all([
-      fetch(`${apiUrl}/financial-accounts?page=1&limit=100&year=${period.year}&month=${period.month}${destination}`)
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error("Não foi possível carregar o controle financeiro.");
-          }
-          const firstPage = (await response.json()) as AccountList;
-          const remainingPages = await Promise.all(
-            Array.from(
-              { length: Math.max(0, firstPage.pagination.total_pages - 1) },
-              (_, index) =>
-                fetch(
-                  `${apiUrl}/financial-accounts?page=${index + 2}&limit=100&year=${period.year}&month=${period.month}${destination}`,
-                ).then(async (nextResponse) => {
-                  if (!nextResponse.ok) {
-                    throw new Error("Não foi possível carregar o controle financeiro.");
-                  }
-                  return nextResponse.json() as Promise<AccountList>;
-                }),
-            ),
-          );
-          return {
-            ...firstPage,
-            items: [firstPage, ...remainingPages].flatMap((item) => item.items),
-          };
-        }),
+      fetch(
+        `${apiUrl}/financial-accounts?page=1&limit=100&year=${period.year}&month=${period.month}${destination}`,
+      ).then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Não foi possível carregar o controle financeiro.");
+        }
+        const firstPage = (await response.json()) as AccountList;
+        const remainingPages = await Promise.all(
+          Array.from(
+            { length: Math.max(0, firstPage.pagination.total_pages - 1) },
+            (_, index) =>
+              fetch(
+                `${apiUrl}/financial-accounts?page=${index + 2}&limit=100&year=${period.year}&month=${period.month}${destination}`,
+              ).then(async (nextResponse) => {
+                if (!nextResponse.ok) {
+                  throw new Error(
+                    "Não foi possível carregar o controle financeiro.",
+                  );
+                }
+                return nextResponse.json() as Promise<AccountList>;
+              }),
+          ),
+        );
+        return {
+          ...firstPage,
+          items: [firstPage, ...remainingPages].flatMap((item) => item.items),
+        };
+      }),
       fetch(
         `${apiUrl}/financial-movements?year=${period.year}&month=${period.month}&page=1&limit=1`,
       ).then(async (response) => {
@@ -353,7 +353,9 @@ export function FinancialManagement() {
           columnFilters.description,
         ) &&
         matchesTableColumnFilter(
-          account.destination === "fisica" ? "Pessoa física" : "Pessoa jurídica",
+          account.destination === "fisica"
+            ? "Pessoa física"
+            : "Pessoa jurídica",
           columnFilters.destination,
         ) &&
         matchesTableColumnFilter(
@@ -399,7 +401,7 @@ export function FinancialManagement() {
   );
   const selected =
     selectedIds.length === 1
-      ? data.items.find((item) => item.id === selectedIds[0]) ?? null
+      ? (data.items.find((item) => item.id === selectedIds[0]) ?? null)
       : null;
   const selectedAccounts = data.items.filter((account) =>
     selectedIds.includes(account.id),
@@ -538,9 +540,7 @@ export function FinancialManagement() {
       closeForm();
       reload();
       toast.success(
-        editing
-          ? "Conta atualizada com sucesso."
-          : "Conta criada com sucesso.",
+        editing ? "Conta atualizada com sucesso." : "Conta criada com sucesso.",
       );
     } catch (reason) {
       setError(
@@ -598,14 +598,11 @@ export function FinancialManagement() {
     if (!selectedIds.length) return;
     setDeleting(true);
     try {
-      const response = await fetch(
-        `${apiUrl}/financial-accounts`,
-        {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: selectedIds }),
-        },
-      );
+      const response = await fetch(`${apiUrl}/financial-accounts`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
       if (!response.ok) throw new Error("Não foi possível excluir a conta.");
       setDeleteOpen(false);
       const deletedCount = selectedIds.length;
@@ -680,9 +677,10 @@ export function FinancialManagement() {
   return (
     <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
       <div className="mx-auto max-w-360">
-        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Controle financeiro
-        </h1>
+        <PageHeader
+          title="Controle financeiro"
+          description="Acompanhe receitas, despesas, saldos e contas por período."
+        />
         <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="inline-flex w-full max-w-175 rounded-xl border border-[#3a3973] bg-[#1b1947] p-1 sm:w-auto">
             {(
@@ -695,7 +693,7 @@ export function FinancialManagement() {
               <Button
                 key={value}
                 variant="ghost"
-                className={`flex-1 px-5 ${view === value ? "bg-sky-500 text-slate-950 hover:bg-sky-400 hover:text-slate-950" : "text-zinc-300 hover:bg-[#302e67] hover:text-white"}`}
+                className={`flex-1 px-5 ${view === value ? "bg-sky-500 text-slate-950 hover:bg-sky-400" : "text-zinc-300 hover:bg-[#302e67] hover:text-white"}`}
                 onClick={() => setCurrentView(value)}
               >
                 {label}
@@ -722,21 +720,14 @@ export function FinancialManagement() {
                 </option>
               ))}
             </select>
-            <select
-              aria-label="Ano"
+            <YearSelect
               value={period?.year ?? ""}
+              years={years}
               disabled={!period}
-              onChange={(event) =>
-                changePeriod(Number(event.target.value), period?.month ?? 1)
+              onChange={(nextYear) =>
+                changePeriod(nextYear, period?.month ?? 1)
               }
-              className="h-10 rounded-lg border border-[#4a4880] bg-[#181642] px-3 text-sm text-zinc-100 outline-none"
-            >
-              {years.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
+            />
             <TooltipProvider>
               <div className="flex flex-wrap gap-2">
                 <ActionTooltip label="Nova conta">
@@ -808,11 +799,6 @@ export function FinancialManagement() {
         <div className="mt-5">
           <Card className="border-[#3a3973] bg-[#222153] py-0 shadow-none">
             <CardContent className="p-0">
-              <div className="border-b border-[#3a3973] p-5">
-                <h2 className="text-2xl font-semibold text-white">
-                  Contas a receber e a pagar
-                </h2>
-              </div>
               {error ? (
                 <p className="mx-5 mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
                   {error}
@@ -820,7 +806,7 @@ export function FinancialManagement() {
               ) : null}
               <div className="overflow-x-auto">
                 <table className="w-full min-w-245 text-left text-sm">
-                  <thead className="text-xs font-bold text-zinc-300">
+                  <thead className="bg-[#29275c] text-xs font-bold uppercase tracking-wide text-zinc-300">
                     <tr>
                       <th className="w-10 px-4 py-4">
                         {accounts.length ? (
@@ -833,7 +819,9 @@ export function FinancialManagement() {
                               setSelectedIds(
                                 allVisibleSelected
                                   ? []
-                              : visibleAccounts.map((account) => account.id),
+                                  : visibleAccounts.map(
+                                      (account) => account.id,
+                                    ),
                               )
                             }
                           />
@@ -985,7 +973,12 @@ export function FinancialManagement() {
               Excluir {selectedIds.length === 1 ? "conta" : "contas"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação removerá {selectedIds.length === 1 ? "a conta selecionada" : `as ${selectedIds.length} contas selecionadas`} e seus abatimentos. As movimentações geradas pelos abatimentos também serão removidas.
+              Esta ação removerá{" "}
+              {selectedIds.length === 1
+                ? "a conta selecionada"
+                : `as ${selectedIds.length} contas selecionadas`}{" "}
+              e seus abatimentos. As movimentações geradas pelos abatimentos
+              também serão removidas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1189,7 +1182,10 @@ function AccountDetails({
         />
       </div>
       <div className="mt-5 space-y-3 border-t border-[#39386a] pt-4 text-sm">
-        <Row label="Valor original" value={currency.format(account.original_amount)} />
+        <Row
+          label="Valor original"
+          value={currency.format(account.original_amount)}
+        />
         <Row label="Pago" value={currency.format(account.paid_amount)} />
         <Row
           label="Saldo devedor"
@@ -1205,70 +1201,6 @@ function AccountDetails({
         <Landmark /> Registrar pagamento
       </Button>
     </div>
-  );
-}
-
-function Summary({
-  account,
-  onSettle,
-}: {
-  account: Account | null;
-  onSettle: () => void;
-}) {
-  const progress = account?.original_amount
-    ? Math.min(100, (account.paid_amount / account.original_amount) * 100)
-    : 0;
-  return (
-    <Card className="h-fit border-[#3a3973] bg-[#222153] py-0 shadow-none xl:sticky xl:top-8">
-      <CardContent className="p-5">
-        <h2 className="text-xl font-semibold text-white">Resumo da conta</h2>
-        {account ? (
-          <>
-            <div className="mt-5 flex items-center gap-2 text-sm text-zinc-400">
-              Tipo de pessoa: <Pill destination={account.destination} />
-            </div>
-            <h3 className="mt-3 text-lg font-semibold text-white">
-              {account.description}
-            </h3>
-            <span className="mt-3 inline-flex rounded-lg border border-emerald-400/60 bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-300">
-              {account.status === "open" ? "Em aberto" : "Quitada"}
-            </span>
-            <p className="mt-6 text-sm font-medium text-white">
-              {Math.round(progress)}% pago
-            </p>
-            <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#45437a]">
-              <div
-                className="h-full rounded-full bg-sky-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="mt-6 space-y-4 border-t border-[#39386a] pt-4 text-sm">
-              <Row
-                label="Valor original"
-                value={currency.format(account.original_amount)}
-              />
-              <Row label="Pago" value={currency.format(account.paid_amount)} />
-              <Row
-                label="Saldo devedor"
-                value={currency.format(account.outstanding_amount)}
-                emphasis
-              />
-            </div>
-            <Button
-              disabled={account.status === "settled"}
-              className="mt-6 h-11 w-full bg-sky-500 text-slate-950 hover:bg-sky-400"
-              onClick={onSettle}
-            >
-              <Landmark /> Registrar pagamento
-            </Button>
-          </>
-        ) : (
-          <p className="mt-5 text-sm text-zinc-400">
-            Selecione uma conta na tabela para ver os detalhes.
-          </p>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1311,12 +1243,7 @@ function AccountModal({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <Modal
-      title={
-        editing ? "Editar conta" : "Nova conta"
-      }
-      onClose={onClose}
-    >
+    <Modal title={editing ? "Editar conta" : "Nova conta"} onClose={onClose}>
       <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
         <Field label="Tipo">
           <select

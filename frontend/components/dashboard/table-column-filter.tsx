@@ -143,12 +143,18 @@ export function TableColumnFilterButton({
                     )}
                   </select>
                 </label>
-                <div className={hasRange ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"}>
+                <div
+                  className={
+                    hasRange ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"
+                  }
+                >
                   <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
                     {hasRange ? "De" : "Valor"}
                     <Input
                       className="border-zinc-700 bg-zinc-900 text-white"
-                      placeholder={kind === "text" ? "Informe o valor" : undefined}
+                      placeholder={
+                        kind === "text" ? "Informe o valor" : undefined
+                      }
                       type={inputType(kind)}
                       value={draft.value}
                       onChange={(event) =>
@@ -161,7 +167,9 @@ export function TableColumnFilterButton({
                       Até
                       <Input
                         className="border-zinc-700 bg-zinc-900 text-white"
-                        placeholder={kind === "text" ? "Informe o valor" : undefined}
+                        placeholder={
+                          kind === "text" ? "Informe o valor" : undefined
+                        }
                         type={inputType(kind)}
                         value={draft.endValue}
                         onChange={(event) =>
@@ -257,8 +265,14 @@ export function matchesTableColumnFilter(
     case "not_equal":
       return numericValue !== first;
     case "within":
-      return numericValue >= Math.min(first, last) && numericValue <= Math.max(first, last);
+      return (
+        numericValue >= Math.min(first, last) &&
+        numericValue <= Math.max(first, last)
+      );
     case "outside":
-      return numericValue < Math.min(first, last) || numericValue > Math.max(first, last);
+      return (
+        numericValue < Math.min(first, last) ||
+        numericValue > Math.max(first, last)
+      );
   }
 }

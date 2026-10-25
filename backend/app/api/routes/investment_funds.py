@@ -20,9 +20,11 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models.investment_fund import InvestmentFund
+from app.services.dividend_events import upsert_dividend_events
 from app.services.fund_cache import (
     cache_fund,
     cache_recommendation,
+    clear_portfolio_dashboard_cache,
     clear_fund_cache,
     create_fund_sync_job,
     finish_fund_refresh,
@@ -176,6 +178,9 @@ def create_fund_from_explorer(ticker: str) -> None:
             )
             db.add(fund)
             db.commit()
+            upsert_dividend_events(db, fund, explorer_fund.dividend_events)
+            db.commit()
+            clear_portfolio_dashboard_cache()
     except FundsExplorerError as error:
         logger.warning("Funds Explorer import failed for %s: %s", ticker, error)
     except Exception:
@@ -202,7 +207,9 @@ def sync_fund_from_explorer(ticker: str) -> bool:
             fund.sector = explorer_fund.sector
             fund.latest_price = explorer_fund.latest_price
             fund.annual_dividend_yield = explorer_fund.annual_dividend_yield
+            upsert_dividend_events(db, fund, explorer_fund.dividend_events)
             db.commit()
+            clear_portfolio_dashboard_cache()
             return True
     except FundsExplorerError as error:
         logger.warning("Funds Explorer sync failed for %s: %s", ticker, error)
@@ -542,6 +549,7 @@ def create_investment_fund(
             detail=f"O FII {fund_data['ticker']} já está cadastrado na base.",
         ) from error
     db.refresh(fund)
+    clear_portfolio_dashboard_cache()
     return fund
 
 
@@ -560,6 +568,7 @@ def update_investment_fund(
             status_code=409, detail="Já existe um fundo com este ticker."
         ) from error
     db.refresh(fund)
+    clear_portfolio_dashboard_cache()
     return fund
 
 
@@ -568,6 +577,7 @@ def delete_investment_fund(fund_id: int, db: Session = Depends(get_db)) -> None:
     fund = get_fund_or_404(fund_id, db)
     db.delete(fund)
     db.commit()
+    clear_portfolio_dashboard_cache()
 
 
 @router.delete("")
@@ -578,4 +588,5 @@ def delete_investment_funds(
         InvestmentFund.id.in_(payload.ids)
     ).delete(synchronize_session=False)
     db.commit()
+    clear_portfolio_dashboard_cache()
     return {"deleted_count": deleted_count}

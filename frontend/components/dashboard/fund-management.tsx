@@ -1,26 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  Download,
-  Edit3,
-  Plus,
-  RefreshCw,
-  Trash2,
-  WalletCards,
-  X,
-} from "lucide-react";
+import { Download, Edit3, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { NumericFormat } from "react-number-format";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ActionTooltip } from "./action-tooltip";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -37,6 +25,7 @@ import {
   TableColumnFilterButton,
 } from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
+import { PageHeader } from "./page-header";
 
 type InvestmentFund = {
   id: number;
@@ -108,7 +97,8 @@ async function fetchAllFunds(): Promise<FundListResponse> {
   const firstResponse = await fetch(
     `${apiUrl}/investment-funds?page=1&limit=100`,
   );
-  if (!firstResponse.ok) throw new Error("Não foi possível carregar os fundos.");
+  if (!firstResponse.ok)
+    throw new Error("Não foi possível carregar os fundos.");
   const firstPage = (await firstResponse.json()) as FundListResponse;
   const remainingPages = await Promise.all(
     Array.from(
@@ -116,7 +106,8 @@ async function fetchAllFunds(): Promise<FundListResponse> {
       (_, index) =>
         fetch(`${apiUrl}/investment-funds?page=${index + 2}&limit=100`).then(
           async (response) => {
-            if (!response.ok) throw new Error("Não foi possível carregar os fundos.");
+            if (!response.ok)
+              throw new Error("Não foi possível carregar os fundos.");
             return response.json() as Promise<FundListResponse>;
           },
         ),
@@ -150,27 +141,9 @@ function toPayload(form: FundForm) {
   };
 }
 
-function ActionTooltip({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>
-        {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function FundManagement() {
   const [fundData, setFundData] = useState<FundListResponse>(emptyFundData);
   const [page, setPage] = useState(1);
-  const [reloadKey, setReloadKey] = useState(0);
   const [columnFilters, setColumnFilters] = useState<
     Partial<Record<FundFilterKey, TableColumnFilter>>
   >({});
@@ -222,7 +195,7 @@ export function FundManagement() {
     return () => {
       isMounted = false;
     };
-  }, [reloadKey]);
+  }, []);
 
   const funds = useMemo(
     () =>
@@ -548,18 +521,13 @@ export function FundManagement() {
 
   return (
     <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
-      <Card className="border-[#36366c] bg-[#222153] py-0 shadow-none">
+      <PageHeader
+        title="Fundos imobiliários"
+        description="Gerencie os fundos cadastrados na sua carteira."
+      />
+      <Card className="mt-5 border-[#36366c] bg-[#222153] py-0 shadow-none">
         <CardContent className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="flex items-center gap-2 text-lg font-semibold text-white">
-                <WalletCards className="size-5 text-sky-400" />
-                Fundos imobiliários
-              </h1>
-              <p className="mt-1 text-sm text-zinc-400">
-                Gerencie os fundos cadastrados na sua carteira.
-              </p>
-            </div>
+          <div className="flex justify-end">
             <TooltipProvider>
               <div className="flex flex-wrap gap-2">
                 <ActionTooltip label="Atualizar FIIs selecionados">
@@ -648,7 +616,9 @@ export function FundManagement() {
                       aria-label="Selecionar todos os fundos desta página"
                       checked={
                         visibleFunds.length > 0 &&
-                        visibleFunds.every((fund) => selectedFundIds.includes(fund.id))
+                        visibleFunds.every((fund) =>
+                          selectedFundIds.includes(fund.id),
+                        )
                       }
                       className="size-4 accent-sky-400"
                       type="checkbox"
@@ -659,7 +629,9 @@ export function FundManagement() {
                     <TableColumnFilterButton
                       filter={columnFilters.ticker}
                       label="Ticker"
-                      onChange={(filter) => updateColumnFilter("ticker", filter)}
+                      onChange={(filter) =>
+                        updateColumnFilter("ticker", filter)
+                      }
                     />
                   </th>
                   <th className="px-4 py-3" scope="col">
@@ -673,7 +645,9 @@ export function FundManagement() {
                     <TableColumnFilterButton
                       filter={columnFilters.sector}
                       label="Setor"
-                      onChange={(filter) => updateColumnFilter("sector", filter)}
+                      onChange={(filter) =>
+                        updateColumnFilter("sector", filter)
+                      }
                     />
                   </th>
                   <th className="px-4 py-3 text-right" scope="col">
@@ -702,7 +676,9 @@ export function FundManagement() {
                       filter={columnFilters.updatedAt}
                       kind="date"
                       label="Última atualização"
-                      onChange={(filter) => updateColumnFilter("updatedAt", filter)}
+                      onChange={(filter) =>
+                        updateColumnFilter("updatedAt", filter)
+                      }
                     />
                   </th>
                 </tr>
@@ -781,17 +757,14 @@ export function FundManagement() {
         </CardContent>
       </Card>
 
-      <AlertDialog
-        open={isSyncDialogOpen}
-        onOpenChange={setIsSyncDialogOpen}
-      >
+      <AlertDialog open={isSyncDialogOpen} onOpenChange={setIsSyncDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Atualizar cotação dos FIIs?</AlertDialogTitle>
             <AlertDialogDescription>
               Os valores de {selectedFundIds.length} FII(s) selecionado(s) serão
-              atualizados de acordo com a cotação atual. A consulta será executada
-              em segundo plano.
+              atualizados de acordo com a cotação atual. A consulta será
+              executada em segundo plano.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1006,7 +979,10 @@ export function FundManagement() {
                   </div>
                 </label>
                 {importTickers.length > 0 ? (
-                  <div className="flex flex-wrap gap-2" aria-label="FIIs adicionados">
+                  <div
+                    className="flex flex-wrap gap-2"
+                    aria-label="FIIs adicionados"
+                  >
                     {importTickers.map((ticker) => (
                       <span
                         className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100"

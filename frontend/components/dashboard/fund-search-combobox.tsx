@@ -96,7 +96,9 @@ export function FundSearchCombobox({
                     />
                     <span className="min-w-0">
                       <span className="font-semibold">{fund.ticker}</span>
-                      <span className="ml-1.5 text-zinc-400">— {fund.name}</span>
+                      <span className="ml-1.5 text-zinc-400">
+                        — {fund.name}
+                      </span>
                       <span className="ml-1.5 text-sky-300">
                         {money.format(Number(fund.latest_price ?? 0))}
                       </span>

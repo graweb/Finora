@@ -23,7 +23,11 @@ export function FundRecommendations({ funds }: { funds: RecommendedFund[] }) {
         (fund) =>
           matchesTableColumnFilter(fund.ticker, filters.fund) &&
           matchesTableColumnFilter(fund.sector, filters.sector) &&
-          matchesTableColumnFilter(fund.annualYield * 100, filters.yield, "number") &&
+          matchesTableColumnFilter(
+            fund.annualYield * 100,
+            filters.yield,
+            "number",
+          ) &&
           matchesTableColumnFilter(fund.score, filters.score, "number"),
       ),
     [filters, funds],
@@ -130,8 +134,9 @@ export function FundRecommendations({ funds }: { funds: RecommendedFund[] }) {
       )}
 
       <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-        Score informativo: 60% dividend yield anual, 25% diversificação por setor
-        e 15% dados atualizados. Não constitui recomendação de investimento.
+        Score informativo: 60% dividend yield anual, 25% diversificação por
+        setor e 15% dados atualizados. Não constitui recomendação de
+        investimento.
       </p>
     </section>
   );

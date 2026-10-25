@@ -25,7 +25,11 @@ export function RecommendationProgress({
     : isComplete
       ? "Dados prontos para a sua simulação."
       : "Informe sua meta e clique em Calcular.";
-  const Icon = isProcessing ? LoaderCircle : isComplete ? CheckCircle2 : Sparkles;
+  const Icon = isProcessing
+    ? LoaderCircle
+    : isComplete
+      ? CheckCircle2
+      : Sparkles;
 
   return (
     <Card className="mb-5 min-h-[132px] border-sky-400/25 bg-[#222153] py-0 shadow-none">

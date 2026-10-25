@@ -1,6 +1,14 @@
 "use client";
 
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  FormEvent,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ChevronDown,
   CircleDollarSign,
@@ -24,15 +32,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ActionTooltip } from "./action-tooltip";
 import { DashboardMetricCard } from "./dashboard-metric-card";
+import { PageHeader } from "./page-header";
 import { money } from "./dashboard-types";
 import { FundSearchCombobox } from "./fund-search-combobox";
+import { PortfolioDividends } from "./portfolio-dividends";
 import {
   matchesTableColumnFilter,
   TableColumnFilter,
@@ -83,7 +89,12 @@ type TransactionForm = {
   occurredOn: string;
 };
 type PortfolioFilterKey = "fund" | "sector" | "quantity" | "value";
-type TransactionFilterKey = "type" | "quantity" | "unitPrice" | "total" | "date";
+type TransactionFilterKey =
+  | "type"
+  | "quantity"
+  | "unitPrice"
+  | "total"
+  | "date";
 
 const emptyPortfolio: PortfolioData = {
   items: [],
@@ -103,23 +114,6 @@ const createEmptyForm = (): TransactionForm => ({
 });
 const formatDate = (value: string) =>
   new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
-
-function ActionTooltip({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>
-        {children}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
 
 function Modal({
   title,
@@ -154,6 +148,26 @@ function Modal({
 }
 
 export function PortfolioManagement() {
+  return (
+    <Suspense fallback={null}>
+      <PortfolioManagementWithReset />
+    </Suspense>
+  );
+}
+
+function PortfolioManagementWithReset() {
+  const searchParams = useSearchParams();
+  return (
+    <PortfolioManagementContent
+      key={searchParams.get("tabReset") ?? "default"}
+    />
+  );
+}
+
+function PortfolioManagementContent() {
+  const [activeTab, setActiveTab] = useState<"operations" | "dividends">(
+    "dividends",
+  );
   const [funds, setFunds] = useState<FundOption[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(emptyPortfolio);
   const [page, setPage] = useState(1);
@@ -180,28 +194,26 @@ export function PortfolioManagement() {
         if (!response.ok) throw new Error();
         return response.json() as Promise<{ items: FundOption[] }>;
       }),
-      fetch(`${apiUrl}/portfolio?page=1&limit=100`).then(
-        async (response) => {
-          if (!response.ok) throw new Error();
-          const firstPage = (await response.json()) as PortfolioData;
-          const remainingPages = await Promise.all(
-            Array.from(
-              { length: Math.max(0, firstPage.total_pages - 1) },
-              (_, index) =>
-                fetch(`${apiUrl}/portfolio?page=${index + 2}&limit=100`).then(
-                  async (nextResponse) => {
-                    if (!nextResponse.ok) throw new Error();
-                    return nextResponse.json() as Promise<PortfolioData>;
-                  },
-                ),
-            ),
-          );
-          return {
-            ...firstPage,
-            items: [firstPage, ...remainingPages].flatMap((item) => item.items),
-          };
-        },
-      ),
+      fetch(`${apiUrl}/portfolio?page=1&limit=100`).then(async (response) => {
+        if (!response.ok) throw new Error();
+        const firstPage = (await response.json()) as PortfolioData;
+        const remainingPages = await Promise.all(
+          Array.from(
+            { length: Math.max(0, firstPage.total_pages - 1) },
+            (_, index) =>
+              fetch(`${apiUrl}/portfolio?page=${index + 2}&limit=100`).then(
+                async (nextResponse) => {
+                  if (!nextResponse.ok) throw new Error();
+                  return nextResponse.json() as Promise<PortfolioData>;
+                },
+              ),
+          ),
+        );
+        return {
+          ...firstPage,
+          items: [firstPage, ...remainingPages].flatMap((item) => item.items),
+        };
+      }),
     ])
       .then(([fundResponse, portfolioResponse]) => {
         if (!live) return;
@@ -222,7 +234,9 @@ export function PortfolioManagement() {
   );
   const selectedTransaction =
     selectedIds.length === 1
-      ? transactions.find((transaction) => transaction.id === selectedIds[0]) ?? null
+      ? (transactions.find(
+          (transaction) => transaction.id === selectedIds[0],
+        ) ?? null)
       : null;
   const selectedTotal = selectedIds.length;
   const positions = useMemo(
@@ -239,7 +253,11 @@ export function PortfolioManagement() {
             columnFilters.quantity,
             "number",
           ) &&
-          matchesTableColumnFilter(position.total_value, columnFilters.value, "number"),
+          matchesTableColumnFilter(
+            position.total_value,
+            columnFilters.value,
+            "number",
+          ),
       ),
     [columnFilters, portfolio.items],
   );
@@ -377,19 +395,75 @@ export function PortfolioManagement() {
     }
   };
 
+  if (activeTab === "dividends") {
+    return (
+      <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
+        <div className="mx-auto max-w-360">
+          <PageHeader
+            title="Minha carteira"
+            description="Acompanhe suas posições, operações e proventos recebidos."
+          />
+          <PortfolioDividends
+            tabs={
+              <PortfolioTabs activeTab={activeTab} onChange={setActiveTab} />
+            }
+          />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
       <div className="mx-auto max-w-360">
-        <header>
-          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Minha carteira
-          </h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            Acompanhe suas posições e os lançamentos de compra e venda.
-          </p>
-        </header>
+        <PageHeader
+          title="Minha carteira"
+          description="Acompanhe suas posições, operações e proventos recebidos."
+        />
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <PortfolioTabs activeTab={activeTab} onChange={setActiveTab} />
+          <TooltipProvider>
+            <div className="flex gap-2">
+              <ActionTooltip label="Adicionar lançamento">
+                <Button
+                  aria-label="Adicionar lançamento"
+                  className="size-10 bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                  size="icon-lg"
+                  onClick={openCreate}
+                >
+                  <Plus />
+                </Button>
+              </ActionTooltip>
+              <ActionTooltip label="Editar lançamento selecionado">
+                <Button
+                  aria-label="Editar lançamento selecionado"
+                  className="size-10 border-zinc-700 bg-transparent text-white hover:bg-zinc-800 hover:text-white"
+                  disabled={!selectedTransaction}
+                  size="icon-lg"
+                  variant="outline"
+                  onClick={openEdit}
+                >
+                  <Edit3 />
+                </Button>
+              </ActionTooltip>
+              <ActionTooltip label="Excluir lançamentos selecionados">
+                <Button
+                  aria-label="Excluir lançamentos selecionados"
+                  className="size-10"
+                  disabled={!selectedTotal}
+                  size="icon-lg"
+                  variant="destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 />
+                </Button>
+              </ActionTooltip>
+            </div>
+          </TooltipProvider>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <DashboardMetricCard
             icon={WalletCards}
             label="FIIs na carteira"
@@ -406,72 +480,27 @@ export function PortfolioManagement() {
 
         <Card className="mt-5 border-zinc-700 bg-[#18181b] py-0 shadow-none">
           <CardContent className="p-0">
-            <div className="flex flex-col gap-4 border-b border-zinc-800 p-5 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-white">
-                  FIIs em carteira
-                </h2>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Expanda um FII para conferir seus lançamentos.
-                </p>
-              </div>
-              <TooltipProvider>
-                <div className="flex gap-2">
-                  <ActionTooltip label="Adicionar lançamento">
-                    <Button
-                      aria-label="Adicionar lançamento"
-                      className="size-10 bg-cyan-500 text-slate-950 hover:bg-cyan-400"
-                      size="icon-lg"
-                      onClick={openCreate}
-                    >
-                      <Plus />
-                    </Button>
-                  </ActionTooltip>
-                  <ActionTooltip label="Editar lançamento selecionado">
-                    <Button
-                      aria-label="Editar lançamento selecionado"
-                      className="size-10 border-zinc-700 bg-transparent text-white hover:bg-zinc-800 hover:text-white"
-                      disabled={!selectedTransaction}
-                      size="icon-lg"
-                      variant="outline"
-                      onClick={openEdit}
-                    >
-                      <Edit3 />
-                    </Button>
-                  </ActionTooltip>
-                  <ActionTooltip label="Excluir lançamentos selecionados">
-                    <Button
-                      aria-label="Excluir lançamentos selecionados"
-                      className="size-10"
-                      disabled={!selectedTotal}
-                      size="icon-lg"
-                      variant="destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </ActionTooltip>
-                </div>
-              </TooltipProvider>
-            </div>
-
             <div className="overflow-x-auto">
               <table className="w-full min-w-190 text-left text-sm">
-                <thead className="border-b border-zinc-800 text-xs font-bold tracking-wide text-sky-200 uppercase">
+                <thead className="bg-[#29275c] text-xs font-bold uppercase tracking-wide text-zinc-300">
                   <tr>
                     <th className="w-10 px-4 py-4" />
                     <th className="px-3 py-4">
                       <TableColumnFilterButton
                         filter={columnFilters.fund}
                         label="FII"
-                        onChange={(filter) => updateColumnFilter("fund", filter)}
+                        onChange={(filter) =>
+                          updateColumnFilter("fund", filter)
+                        }
                       />
                     </th>
                     <th className="px-3 py-4">
                       <TableColumnFilterButton
                         filter={columnFilters.sector}
                         label="Setor"
-                        onChange={(filter) => updateColumnFilter("sector", filter)}
+                        onChange={(filter) =>
+                          updateColumnFilter("sector", filter)
+                        }
                       />
                     </th>
                     <th className="px-3 py-4 text-right">
@@ -491,7 +520,9 @@ export function PortfolioManagement() {
                         filter={columnFilters.value}
                         kind="number"
                         label="Valor total"
-                        onChange={(filter) => updateColumnFilter("value", filter)}
+                        onChange={(filter) =>
+                          updateColumnFilter("value", filter)
+                        }
                       />
                     </th>
                   </tr>
@@ -502,7 +533,9 @@ export function PortfolioManagement() {
                     const filteredTransactions = position.transactions.filter(
                       (transaction) =>
                         matchesTableColumnFilter(
-                          transaction.transaction_type === "buy" ? "Compra" : "Venda",
+                          transaction.transaction_type === "buy"
+                            ? "Compra"
+                            : "Venda",
                           transactionFilters.type,
                         ) &&
                         matchesTableColumnFilter(
@@ -559,7 +592,10 @@ export function PortfolioManagement() {
                         </tr>
                         {isExpanded ? (
                           <tr>
-                            <td className="bg-zinc-900/70 px-5 py-4" colSpan={5}>
+                            <td
+                              className="bg-zinc-900/70 px-5 py-4"
+                              colSpan={5}
+                            >
                               <p className="mb-3 text-xs font-bold tracking-wide text-zinc-400 uppercase">
                                 Lançamentos
                               </p>
@@ -573,7 +609,10 @@ export function PortfolioManagement() {
                                           filter={transactionFilters.type}
                                           label="Tipo"
                                           onChange={(filter) =>
-                                            updateTransactionFilter("type", filter)
+                                            updateTransactionFilter(
+                                              "type",
+                                              filter,
+                                            )
                                           }
                                         />
                                       </th>
@@ -584,7 +623,10 @@ export function PortfolioManagement() {
                                           kind="number"
                                           label="Quantidade"
                                           onChange={(filter) =>
-                                            updateTransactionFilter("quantity", filter)
+                                            updateTransactionFilter(
+                                              "quantity",
+                                              filter,
+                                            )
                                           }
                                         />
                                       </th>
@@ -595,7 +637,10 @@ export function PortfolioManagement() {
                                           kind="number"
                                           label="Valor unitário"
                                           onChange={(filter) =>
-                                            updateTransactionFilter("unitPrice", filter)
+                                            updateTransactionFilter(
+                                              "unitPrice",
+                                              filter,
+                                            )
                                           }
                                         />
                                       </th>
@@ -606,7 +651,10 @@ export function PortfolioManagement() {
                                           kind="number"
                                           label="Valor total"
                                           onChange={(filter) =>
-                                            updateTransactionFilter("total", filter)
+                                            updateTransactionFilter(
+                                              "total",
+                                              filter,
+                                            )
                                           }
                                         />
                                       </th>
@@ -617,7 +665,10 @@ export function PortfolioManagement() {
                                           kind="date"
                                           label="Data"
                                           onChange={(filter) =>
-                                            updateTransactionFilter("date", filter)
+                                            updateTransactionFilter(
+                                              "date",
+                                              filter,
+                                            )
                                           }
                                         />
                                       </th>
@@ -628,22 +679,31 @@ export function PortfolioManagement() {
                                       <tr
                                         key={transaction.id}
                                         className="cursor-pointer border-t border-zinc-800 text-zinc-300 transition-colors hover:bg-[#29275c]/45"
-                                        onClick={() => toggleSelection(transaction.id)}
+                                        onClick={() =>
+                                          toggleSelection(transaction.id)
+                                        }
                                       >
                                         <td className="py-3">
                                           <input
                                             aria-label={`Selecionar lançamento de ${position.ticker}`}
-                                            checked={selectedIds.includes(transaction.id)}
+                                            checked={selectedIds.includes(
+                                              transaction.id,
+                                            )}
                                             className="size-4 accent-sky-400"
                                             type="checkbox"
-                                            onClick={(event) => event.stopPropagation()}
-                                            onChange={() => toggleSelection(transaction.id)}
+                                            onClick={(event) =>
+                                              event.stopPropagation()
+                                            }
+                                            onChange={() =>
+                                              toggleSelection(transaction.id)
+                                            }
                                           />
                                         </td>
                                         <td
                                           className={`py-3 font-medium ${transaction.transaction_type === "buy" ? "text-emerald-300" : "text-rose-300"}`}
                                         >
-                                          {transaction.transaction_type === "buy"
+                                          {transaction.transaction_type ===
+                                          "buy"
                                             ? "Compra"
                                             : "Venda"}
                                         </td>
@@ -651,10 +711,14 @@ export function PortfolioManagement() {
                                           {transaction.quantity}
                                         </td>
                                         <td className="py-3 text-right">
-                                          {money.format(Number(transaction.unit_price))}
+                                          {money.format(
+                                            Number(transaction.unit_price),
+                                          )}
                                         </td>
                                         <td className="py-3 text-right">
-                                          {money.format(Number(transaction.total_amount))}
+                                          {money.format(
+                                            Number(transaction.total_amount),
+                                          )}
                                         </td>
                                         <td className="py-3 text-right">
                                           {formatDate(transaction.occurred_on)}
@@ -667,7 +731,8 @@ export function PortfolioManagement() {
                                           className="py-4 text-center text-zinc-400"
                                           colSpan={6}
                                         >
-                                          Nenhum lançamento encontrado para os filtros informados.
+                                          Nenhum lançamento encontrado para os
+                                          filtros informados.
                                         </td>
                                       </tr>
                                     ) : null}
@@ -723,7 +788,11 @@ export function PortfolioManagement() {
               Excluir {selectedTotal === 1 ? "lançamento" : "lançamentos"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação removerá {selectedTotal === 1 ? "o lançamento selecionado" : `os ${selectedTotal} lançamentos selecionados`} da carteira. Os valores consolidados do FII serão atualizados.
+              Esta ação removerá{" "}
+              {selectedTotal === 1
+                ? "o lançamento selecionado"
+                : `os ${selectedTotal} lançamentos selecionados`}{" "}
+              da carteira. Os valores consolidados do FII serão atualizados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -739,6 +808,41 @@ export function PortfolioManagement() {
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  );
+}
+
+function PortfolioTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: "operations" | "dividends";
+  onChange: (tab: "operations" | "dividends") => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-[#4a4880] bg-[#222153] p-1">
+      <Button
+        className={
+          activeTab === "dividends"
+            ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
+            : "text-zinc-300 hover:bg-[#302e67] hover:text-white"
+        }
+        variant={activeTab === "dividends" ? "default" : "ghost"}
+        onClick={() => onChange("dividends")}
+      >
+        Dividendos recebidos
+      </Button>
+      <Button
+        className={
+          activeTab === "operations"
+            ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
+            : "text-zinc-300 hover:bg-[#302e67] hover:text-white"
+        }
+        variant={activeTab === "operations" ? "default" : "ghost"}
+        onClick={() => onChange("operations")}
+      >
+        Operações
+      </Button>
+    </div>
   );
 }
 
@@ -809,7 +913,9 @@ function PortfolioTransactionModal({
             className="border-zinc-700 bg-zinc-900 text-white"
             type="date"
             value={form.occurredOn}
-            onChange={(event) => setForm({ ...form, occurredOn: event.target.value })}
+            onChange={(event) =>
+              setForm({ ...form, occurredOn: event.target.value })
+            }
           />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
@@ -843,7 +949,7 @@ function PortfolioTransactionModal({
           />
         </label>
         <p className="rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-sm text-zinc-400 sm:col-span-2">
-          Valor do lançamento: {" "}
+          Valor do lançamento:{" "}
           <b className="text-white">{money.format(totalAmount)}</b>
         </p>
         <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
