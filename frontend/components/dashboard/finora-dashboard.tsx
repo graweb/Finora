@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import {
   BarChart3,
   Calculator,
@@ -33,6 +32,7 @@ import { DashboardNavigation } from "./dashboard-navigation";
 import { MonthlyContributionPlan } from "./monthly-contribution-plan";
 import { PageHeader } from "./page-header";
 import { IncomePlanner } from "./income-planner";
+import { useSidebarTabReset } from "./sidebar-tab-reset";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -113,18 +113,7 @@ const chartConfig = {
 };
 
 export function FinoraDashboard() {
-  return (
-    <Suspense fallback={null}>
-      <FinoraDashboardWithReset />
-    </Suspense>
-  );
-}
-
-function FinoraDashboardWithReset() {
-  const searchParams = useSearchParams();
-  return (
-    <FinoraDashboardContent key={searchParams.get("tabReset") ?? "default"} />
-  );
+  return <FinoraDashboardContent />;
 }
 
 function FinoraDashboardContent() {
@@ -134,6 +123,7 @@ function FinoraDashboardContent() {
   const [activeTab, setActiveTab] = useState<
     "portfolio" | "planner" | "contributions"
   >("portfolio");
+  useSidebarTabReset(() => setActiveTab("portfolio"));
   const [desiredIncome, setDesiredIncome] = useState(100);
   const [recommendationTarget, setRecommendationTarget] = useState<
     number | null

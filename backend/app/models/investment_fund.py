@@ -17,6 +17,9 @@ class InvestmentFund(Base):
     annual_dividend_yield: Mapped[float | None] = mapped_column(
         Numeric(8, 6), nullable=True
     )
+    average_daily_liquidity: Mapped[float | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

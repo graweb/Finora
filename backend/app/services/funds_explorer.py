@@ -19,6 +19,7 @@ class FundsExplorerFundData:
     sector: str | None
     latest_price: Decimal | None
     annual_dividend_yield: Decimal | None
+    average_daily_liquidity: Decimal | None
     dividend_events: tuple["FundsExplorerDividendEvent", ...] = ()
 
 
@@ -106,5 +107,6 @@ def fetch_fund(ticker: str, base_url: str) -> FundsExplorerFundData:
         annual_dividend_yield=(
             dividend_yield / Decimal("100") if dividend_yield is not None else None
         ),
+        average_daily_liquidity=_to_decimal(metadata.get("liquidezmediadiaria")),
         dividend_events=_parse_dividend_events(page),
     )

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Calculator, ChartPie, Cog, Home, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,8 +11,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { requestSidebarTabReset } from "./sidebar-tab-reset";
 
-type DashboardView = "dashboard" | "portfolio" | "funds" | "financial";
+type DashboardView = "dashboard" | "portfolio" | "settings" | "financial";
 
 type DashboardNavigationProps = {
   activeView: DashboardView;
@@ -33,21 +34,20 @@ const navigationItems = [
     view: "financial",
   },
   {
-    href: "/fundos",
+    href: "/configuracoes",
     icon: Cog,
-    label: "Fundos imobiliários",
-    view: "funds",
+    label: "Configurações",
+    view: "settings",
   },
 ] as const;
 
 export function DashboardNavigation({ activeView }: DashboardNavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const navigationSequence = useRef(0);
   const router = useRouter();
 
   const navigateTo = (href: string) => {
-    navigationSequence.current += 1;
-    router.push(`${href}?tabReset=${navigationSequence.current}`);
+    requestSidebarTabReset();
+    window.setTimeout(() => router.push(href), 0);
   };
 
   return (

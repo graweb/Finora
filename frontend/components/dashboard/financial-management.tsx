@@ -1,7 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   ChevronDown,
@@ -38,6 +37,7 @@ import {
 import { TablePagination } from "./table-pagination";
 import { YearSelect } from "./year-select";
 import { PageHeader } from "./page-header";
+import { useSidebarTabReset } from "./sidebar-tab-reset";
 
 type Destination = "fisica" | "juridica";
 type AccountType = "receivable" | "payable";
@@ -231,20 +231,7 @@ function Modal({
 }
 
 export function FinancialManagement() {
-  return (
-    <Suspense fallback={null}>
-      <FinancialManagementWithReset />
-    </Suspense>
-  );
-}
-
-function FinancialManagementWithReset() {
-  const searchParams = useSearchParams();
-  return (
-    <FinancialManagementContent
-      key={searchParams.get("tabReset") ?? "default"}
-    />
-  );
+  return <FinancialManagementContent />;
 }
 
 function FinancialManagementContent() {
@@ -252,6 +239,7 @@ function FinancialManagementContent() {
     null,
   );
   const [view, setView] = useState<View>("all");
+  useSidebarTabReset(() => setView("all"));
   const [page, setPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [data, setData] = useState<AccountList>(emptyAccounts);

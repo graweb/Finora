@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models.investment_fund import InvestmentFund
+from app.models.investment_policy import InvestmentPolicy
 from app.services.dividend_events import upsert_dividend_events
 from app.services.fund_cache import (
     cache_fund,
@@ -38,6 +39,7 @@ from app.services.fund_cache import (
     update_fund_sync_job,
 )
 from app.services.funds_explorer import FundsExplorerError, fetch_fund
+from app.services.investment_policy import get_or_create_investment_policy
 
 router = APIRouter(prefix="/investment-funds", tags=["investment-funds"])
 logger = logging.getLogger(__name__)
@@ -175,6 +177,7 @@ def create_fund_from_explorer(ticker: str) -> None:
                 sector=explorer_fund.sector,
                 latest_price=explorer_fund.latest_price,
                 annual_dividend_yield=explorer_fund.annual_dividend_yield,
+                average_daily_liquidity=explorer_fund.average_daily_liquidity,
             )
             db.add(fund)
             db.commit()
@@ -207,6 +210,7 @@ def sync_fund_from_explorer(ticker: str) -> bool:
             fund.sector = explorer_fund.sector
             fund.latest_price = explorer_fund.latest_price
             fund.annual_dividend_yield = explorer_fund.annual_dividend_yield
+            fund.average_daily_liquidity = explorer_fund.average_daily_liquidity
             upsert_dividend_events(db, fund, explorer_fund.dividend_events)
             db.commit()
             clear_portfolio_dashboard_cache()
@@ -241,15 +245,24 @@ def _monthly_yield(annual_yield: Decimal) -> Decimal:
     return Decimal(str((1 + float(annual_yield)) ** (1 / 12) - 1))
 
 
+def _fund_category(sector: str) -> str:
+    normalized_sector = sector.casefold()
+    if "papel" in normalized_sector or "receb" in normalized_sector:
+        return "paper"
+    if "híbr" in normalized_sector or "hibr" in normalized_sector or "multi" in normalized_sector:
+        return "hybrid"
+    return "brick"
+
+
 def _build_recommendations(
-    funds: list[InvestmentFund], desired_income: Decimal
+    funds: list[InvestmentFund], desired_income: Decimal, policy: InvestmentPolicy
 ) -> tuple[list[InvestmentFundRecommendation], Decimal | None, Decimal | None, Decimal | None, list[str]]:
     candidates: list[dict[str, object]] = []
     uncached_tickers: list[str] = []
 
     for fund in funds:
         cached_fund = get_cached_fund(fund.ticker)
-        if cached_fund is None:
+        if cached_fund is None or cached_fund.average_daily_liquidity is None:
             uncached_tickers.append(fund.ticker)
 
         latest_price = (
@@ -260,17 +273,33 @@ def _build_recommendations(
             if cached_fund
             else fund.annual_dividend_yield
         )
+        average_daily_liquidity = (
+            cached_fund.average_daily_liquidity
+            if cached_fund
+            else fund.average_daily_liquidity
+        )
         if latest_price is None or latest_price <= 0 or annual_yield is None or annual_yield <= 0:
+            continue
+
+        sector = (cached_fund.sector if cached_fund else fund.sector) or "Não informado"
+        category = _fund_category(sector)
+        if sector in (policy.excluded_sectors or []):
+            continue
+        if (
+            (category == "paper" and not policy.include_paper)
+            or (category == "brick" and not policy.include_brick)
+            or (category == "hybrid" and not policy.include_hybrid)
+        ):
             continue
 
         candidates.append(
             {
                 "ticker": fund.ticker,
                 "name": cached_fund.name if cached_fund else fund.name,
-                "sector": (cached_fund.sector if cached_fund else fund.sector)
-                or "Não informado",
+                "sector": sector,
                 "latest_price": latest_price,
                 "annual_yield": annual_yield,
+                "average_daily_liquidity": average_daily_liquidity,
                 "source": "redis" if cached_fund else "database",
             }
         )
@@ -279,6 +308,10 @@ def _build_recommendations(
         return [], None, None, None, uncached_tickers
 
     highest_yield = max(Decimal(item["annual_yield"]) for item in candidates)
+    highest_liquidity = max(
+        (Decimal(item["average_daily_liquidity"] or 0) for item in candidates),
+        default=Decimal("0"),
+    )
     funds_per_sector: dict[str, int] = {}
     for item in candidates:
         sector = str(item["sector"])
@@ -287,20 +320,74 @@ def _build_recommendations(
     for item in candidates:
         annual_yield = Decimal(item["annual_yield"])
         sector = str(item["sector"])
-        yield_score = (annual_yield / highest_yield) * Decimal("60")
-        diversification_score = Decimal("25") / funds_per_sector[sector]
-        freshness_score = Decimal("15") if item["source"] == "redis" else Decimal("5")
+        yield_score = (annual_yield / highest_yield) * Decimal(policy.dividend_yield_weight)
+        diversification_score = Decimal(policy.diversification_weight) / funds_per_sector[sector]
+        liquidity = Decimal(item["average_daily_liquidity"] or 0)
+        liquidity_score = (
+            (liquidity / highest_liquidity) * Decimal(policy.liquidity_weight)
+            if highest_liquidity > 0
+            else Decimal("0")
+        )
         item["score"] = int(
-            (yield_score + diversification_score + freshness_score).quantize(Decimal("1"))
+            (yield_score + diversification_score + liquidity_score).quantize(Decimal("1"))
         )
 
-    selected = sorted(candidates, key=lambda item: int(item["score"]), reverse=True)[:10]
+    ranked = sorted(candidates, key=lambda item: int(item["score"]), reverse=True)
+    selected: list[dict[str, object]] = []
+    selected_sectors: set[str] = set()
+    for item in ranked:
+        sector = str(item["sector"])
+        if sector not in selected_sectors:
+            selected.append(item)
+            selected_sectors.add(sector)
+        if len(selected_sectors) >= policy.min_sectors:
+            break
+    minimum_funds = max(10, int((Decimal("100") / Decimal(policy.max_fund_percentage)).to_integral_value(rounding="ROUND_CEILING")))
+    for item in ranked:
+        if item not in selected:
+            selected.append(item)
+        if len(selected) >= minimum_funds:
+            break
     total_score = sum(Decimal(int(item["score"])) for item in selected)
     if total_score <= 0:
         return [], None, None, None, uncached_tickers
 
+    max_fund_weight = Decimal(policy.max_fund_percentage) / Decimal("100")
+    max_sector_weight = Decimal(policy.max_sector_percentage) / Decimal("100")
+    sector_weights: dict[str, Decimal] = {}
+    remaining_weight = Decimal("1")
     for item in selected:
-        item["allocation_weight"] = Decimal(int(item["score"])) / total_score
+        item["allocation_weight"] = Decimal("0")
+    while remaining_weight > Decimal("0.000001"):
+        eligible = [
+            item
+            for item in selected
+            if Decimal(item["allocation_weight"]) < max_fund_weight
+            and sector_weights.get(str(item["sector"]), Decimal("0")) < max_sector_weight
+        ]
+        if not eligible:
+            break
+        eligible_score = sum(Decimal(int(item["score"])) for item in eligible)
+        allocated_this_round = Decimal("0")
+        for item in eligible:
+            sector = str(item["sector"])
+            remaining_fund = max_fund_weight - Decimal(item["allocation_weight"])
+            remaining_sector = max_sector_weight - sector_weights.get(sector, Decimal("0"))
+            proposed = remaining_weight * Decimal(int(item["score"])) / eligible_score
+            allocated = min(proposed, remaining_fund, remaining_sector)
+            if allocated <= 0:
+                continue
+            item["allocation_weight"] = Decimal(item["allocation_weight"]) + allocated
+            sector_weights[sector] = sector_weights.get(sector, Decimal("0")) + allocated
+            allocated_this_round += allocated
+        if allocated_this_round <= 0:
+            break
+        remaining_weight -= allocated_this_round
+
+    selected = [item for item in selected if Decimal(item["allocation_weight"]) > 0]
+    if not selected:
+        return [], None, None, None, uncached_tickers
+    for item in selected:
         item["monthly_yield"] = _monthly_yield(Decimal(item["annual_yield"]))
 
     monthly_yield = sum(
@@ -347,7 +434,9 @@ def get_investment_fund_recommendations(
         annual_yield,
         monthly_yield,
         uncached_tickers,
-    ) = _build_recommendations(funds, desired_income)
+    ) = _build_recommendations(
+        funds, desired_income, get_or_create_investment_policy(db)
+    )
     scheduled_tickers = schedule_fund_refresh(uncached_tickers)
     if scheduled_tickers:
         background_tasks.add_task(refresh_fund_cache, scheduled_tickers)

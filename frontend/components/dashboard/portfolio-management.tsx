@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   ChevronDown,
   CircleDollarSign,
@@ -45,6 +44,7 @@ import {
   TableColumnFilterButton,
 } from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
+import { useSidebarTabReset } from "./sidebar-tab-reset";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -147,17 +147,8 @@ function Modal({
 export function PortfolioManagement() {
   return (
     <Suspense fallback={null}>
-      <PortfolioManagementWithReset />
+      <PortfolioManagementContent />
     </Suspense>
-  );
-}
-
-function PortfolioManagementWithReset() {
-  const searchParams = useSearchParams();
-  return (
-    <PortfolioManagementContent
-      key={searchParams.get("tabReset") ?? "default"}
-    />
   );
 }
 
@@ -165,6 +156,7 @@ function PortfolioManagementContent() {
   const [activeTab, setActiveTab] = useState<"operations" | "dividends">(
     "dividends",
   );
+  useSidebarTabReset(() => setActiveTab("dividends"));
   const [funds, setFunds] = useState<FundOption[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioData>(emptyPortfolio);
   const [page, setPage] = useState(1);

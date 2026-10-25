@@ -6,6 +6,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.financial_movements import router as financial_movements_router
 from app.api.routes.investment_funds import router as investment_funds_router
 from app.api.routes.portfolio import router as portfolio_router
+from app.api.routes.settings import router as settings_router
 from app.core.config import settings
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -23,3 +24,4 @@ app.include_router(investment_funds_router)
 app.include_router(portfolio_router)
 app.include_router(financial_movements_router)
 app.include_router(financial_accounts_router)
+app.include_router(settings_router)

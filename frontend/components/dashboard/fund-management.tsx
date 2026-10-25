@@ -141,7 +141,7 @@ function toPayload(form: FundForm) {
   };
 }
 
-export function FundManagement() {
+export function FundManagement({ embedded = false }: { embedded?: boolean }) {
   const [fundData, setFundData] = useState<FundListResponse>(emptyFundData);
   const [page, setPage] = useState(1);
   const [columnFilters, setColumnFilters] = useState<
@@ -519,82 +519,97 @@ export function FundManagement() {
     }
   }
 
+  const fundActions = (
+    <TooltipProvider>
+      <div className="flex flex-wrap gap-2">
+        <ActionTooltip label="Atualizar FIIs selecionados">
+          <Button
+            aria-label="Atualizar FIIs selecionados"
+            variant="outline"
+            size="icon-lg"
+            className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+            onClick={requestFundsSync}
+            disabled={isSyncing || isRefreshing}
+          >
+            <RefreshCw
+              className={`size-4 ${isSyncing || isRefreshing ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </ActionTooltip>
+        <ActionTooltip label="Importar FIIs">
+          <Button
+            aria-label="Importar FIIs"
+            variant="outline"
+            size="icon-lg"
+            className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+            onClick={() => {
+              setError("");
+              setIsImportOpen(true);
+            }}
+          >
+            <Download className="size-4" />
+          </Button>
+        </ActionTooltip>
+        <ActionTooltip label="Adicionar FII">
+          <Button
+            aria-label="Adicionar FII"
+            size="icon-lg"
+            className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
+            onClick={openCreateForm}
+          >
+            <Plus className="size-4" />
+          </Button>
+        </ActionTooltip>
+        <ActionTooltip label="Editar FII selecionado">
+          <Button
+            aria-label="Editar FII selecionado"
+            variant="outline"
+            size="icon-lg"
+            className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
+            onClick={openEditForm}
+            disabled={!selectedFund}
+          >
+            <Edit3 className="size-4" />
+          </Button>
+        </ActionTooltip>
+        <ActionTooltip label="Excluir FIIs selecionados">
+          <Button
+            aria-label="Excluir FIIs selecionados"
+            variant="destructive"
+            size="icon-lg"
+            className="size-10"
+            onClick={() => setIsDeleteDialogOpen(true)}
+            disabled={selectedFundIds.length === 0}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </ActionTooltip>
+      </div>
+    </TooltipProvider>
+  );
+
   return (
-    <section className="min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8">
-      <PageHeader
-        title="Fundos imobiliários"
-        description="Gerencie os fundos cadastrados na sua carteira."
-      />
+    <section
+      className={
+        embedded ? "contents" : "min-w-0 p-5 pt-20 sm:p-7 sm:pt-20 lg:p-8"
+      }
+    >
+      {!embedded ? (
+        <PageHeader
+          title="Fundos imobiliários"
+          description="Gerencie os fundos cadastrados na sua carteira."
+        />
+      ) : null}
+      {embedded ? (
+        <div className="mt-3 flex justify-end xl:absolute xl:top-0 xl:right-0 xl:mt-0">
+          {fundActions}
+        </div>
+      ) : null}
       <Card className="mt-5 border-[#36366c] bg-[#222153] py-0 shadow-none">
         <CardContent className="p-5 sm:p-6">
-          <div className="flex justify-end">
-            <TooltipProvider>
-              <div className="flex flex-wrap gap-2">
-                <ActionTooltip label="Atualizar FIIs selecionados">
-                  <Button
-                    aria-label="Atualizar FIIs selecionados"
-                    variant="outline"
-                    size="icon-lg"
-                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                    onClick={requestFundsSync}
-                    disabled={isSyncing || isRefreshing}
-                  >
-                    <RefreshCw
-                      className={`size-4 ${isSyncing || isRefreshing ? "animate-spin" : ""}`}
-                    />
-                  </Button>
-                </ActionTooltip>
-                <ActionTooltip label="Importar FIIs">
-                  <Button
-                    aria-label="Importar FIIs"
-                    variant="outline"
-                    size="icon-lg"
-                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                    onClick={() => {
-                      setError("");
-                      setIsImportOpen(true);
-                    }}
-                  >
-                    <Download className="size-4" />
-                  </Button>
-                </ActionTooltip>
-                <ActionTooltip label="Adicionar FII">
-                  <Button
-                    aria-label="Adicionar FII"
-                    size="icon-lg"
-                    className="size-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
-                    onClick={openCreateForm}
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                </ActionTooltip>
-                <ActionTooltip label="Editar FII selecionado">
-                  <Button
-                    aria-label="Editar FII selecionado"
-                    variant="outline"
-                    size="icon-lg"
-                    className="size-10 border-[#4a4880] bg-transparent text-zinc-100 hover:bg-[#302e67] hover:text-white"
-                    onClick={openEditForm}
-                    disabled={!selectedFund}
-                  >
-                    <Edit3 className="size-4" />
-                  </Button>
-                </ActionTooltip>
-                <ActionTooltip label="Excluir FIIs selecionados">
-                  <Button
-                    aria-label="Excluir FIIs selecionados"
-                    variant="destructive"
-                    size="icon-lg"
-                    className="size-10"
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    disabled={selectedFundIds.length === 0}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </ActionTooltip>
-              </div>
-            </TooltipProvider>
-          </div>
+          {!embedded ? (
+            <div className="flex justify-end">{fundActions}</div>
+          ) : null}
 
           {error && !isFormOpen ? (
             <p className="mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">

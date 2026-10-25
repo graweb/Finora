@@ -28,6 +28,7 @@ class CachedFundData:
     sector: str | None
     latest_price: Decimal | None
     annual_dividend_yield: Decimal | None
+    average_daily_liquidity: Decimal | None
     cached_at: str
 
 
@@ -130,6 +131,7 @@ def get_cached_fund(ticker: str) -> CachedFundData | None:
             sector=data.get("sector"),
             latest_price=_to_decimal(data.get("latest_price")),
             annual_dividend_yield=_to_decimal(data.get("annual_dividend_yield")),
+            average_daily_liquidity=_to_decimal(data.get("average_daily_liquidity")),
             cached_at=str(data["cached_at"]),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -146,6 +148,11 @@ def cache_fund(fund: FundsExplorerFundData) -> None:
         "annual_dividend_yield": (
             str(fund.annual_dividend_yield)
             if fund.annual_dividend_yield is not None
+            else None
+        ),
+        "average_daily_liquidity": (
+            str(fund.average_daily_liquidity)
+            if fund.average_daily_liquidity is not None
             else None
         ),
         "cached_at": datetime.now(UTC).isoformat(),
@@ -230,6 +237,13 @@ def get_cached_recommendation() -> dict[str, object] | None:
     except (TypeError, ValueError, json.JSONDecodeError):
         logger.warning("Ignoring invalid cached FII recommendations")
         return None
+
+
+def clear_recommendation_cache() -> None:
+    try:
+        get_redis_client().delete(_RECOMMENDATION_KEY)
+    except RedisError:
+        logger.warning("Redis is unavailable while clearing FII recommendations")
 
 
 def cache_portfolio_dashboard(payload: dict[str, object]) -> None:
