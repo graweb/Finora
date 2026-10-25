@@ -32,7 +32,7 @@ export function RecommendationProgress({
       : Sparkles;
 
   return (
-    <Card className="mb-5 min-h-[132px] border-sky-400/25 bg-[#222153] py-0 shadow-none">
+    <Card className="mb-5 min-h-33 border-sky-400/25 bg-[#222153] py-0 shadow-none">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div>

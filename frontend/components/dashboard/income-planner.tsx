@@ -72,9 +72,9 @@ export function IncomePlanner({
           <div className="grid gap-4 sm:grid-cols-3">
             <DashboardMetricCard
               icon={CircleDollarSign}
-              label="Renda desejada"
+              label="Meta mensal"
               value={money.format(desiredIncome)}
-              hint="por mês"
+              hint="renda passiva desejada"
             />
             <DashboardMetricCard
               icon={WalletCards}

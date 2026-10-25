@@ -97,7 +97,7 @@ export function TableColumnFilterButton({
       </span>
 
       {open ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/75 p-4">
           <Card className="w-full max-w-md border-zinc-700 bg-[#18181b] py-0 shadow-2xl">
             <CardContent className="p-5">
               <div className="flex items-center justify-between gap-4">

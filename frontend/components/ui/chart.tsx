@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ResponsiveContainer } from "recharts";
+import { ResponsiveContainer, Tooltip } from "recharts";
 import { cn } from "cn";
 
 export type ChartConfig = Record<
@@ -52,6 +52,7 @@ type ChartTooltipContentProps = {
     value?: number | string;
   }>;
   hideLabel?: boolean;
+  indicator?: "dot" | "line";
   valueFormatter?: (value: number, name: string) => React.ReactNode;
 };
 
@@ -60,6 +61,7 @@ function ChartTooltipContent({
   payload,
   label,
   hideLabel = false,
+  indicator = "dot",
   valueFormatter,
 }: ChartTooltipContentProps) {
   const config = React.useContext(ChartContext);
@@ -84,7 +86,11 @@ function ChartTooltipContent({
             <div className="flex items-center justify-between gap-4" key={name}>
               <span className="flex items-center gap-1.5 text-zinc-300">
                 <i
-                  className="size-2 rounded-full"
+                  className={
+                    indicator === "line"
+                      ? "h-0.5 w-3 rounded-full"
+                      : "size-2 rounded-full"
+                  }
                   style={{ background: item.color ?? item.fill ?? "#38bdf8" }}
                 />
                 {itemConfig?.label ?? name}
@@ -100,4 +106,6 @@ function ChartTooltipContent({
   );
 }
 
-export { ChartContainer, ChartTooltipContent };
+const ChartTooltip = Tooltip;
+
+export { ChartContainer, ChartTooltip, ChartTooltipContent };

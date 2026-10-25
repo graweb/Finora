@@ -364,6 +364,7 @@ def get_investment_fund_recommendations(
         refreshing_tickers=refreshing_tickers,
     )
     cache_recommendation(response.model_dump(mode="json"))
+    clear_portfolio_dashboard_cache()
     return response
 
 

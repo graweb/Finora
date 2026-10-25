@@ -30,6 +30,7 @@ import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import { DashboardMetricCard } from "./dashboard-metric-card";
 import { money, percent, type Fund } from "./dashboard-types";
 import { DashboardNavigation } from "./dashboard-navigation";
+import { MonthlyContributionPlan } from "./monthly-contribution-plan";
 import { PageHeader } from "./page-header";
 import { IncomePlanner } from "./income-planner";
 
@@ -42,6 +43,8 @@ type PortfolioDashboard = {
     remaining_to_target: number | string;
     total_return_percentage: number | string;
     total_return_amount: number | string;
+    total_invested: number | string;
+    market_value: number | string;
   };
   monthly_income_history: Array<{ label: string; amount: number | string }>;
   portfolio_history: Array<{
@@ -59,6 +62,8 @@ type PortfolioDashboard = {
     name: string;
     sector: string;
     current_price: number | string;
+    quantity: number;
+    average_price: number | string;
     result_amount: number | string;
     result_percentage: number | string;
     yield_on_cost: number | string;
@@ -91,6 +96,8 @@ const emptyDashboard: PortfolioDashboard = {
     remaining_to_target: 0,
     total_return_percentage: 0,
     total_return_amount: 0,
+    total_invested: 0,
+    market_value: 0,
   },
   monthly_income_history: [],
   portfolio_history: [],
@@ -124,10 +131,13 @@ function FinoraDashboardContent() {
   const [dashboard, setDashboard] =
     useState<PortfolioDashboard>(emptyDashboard);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
-  const [activeTab, setActiveTab] = useState<"portfolio" | "planner">(
-    "portfolio",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "portfolio" | "planner" | "contributions"
+  >("portfolio");
   const [desiredIncome, setDesiredIncome] = useState(100);
+  const [recommendationTarget, setRecommendationTarget] = useState<
+    number | null
+  >(null);
   const [plannerFunds, setPlannerFunds] = useState<Fund[]>([]);
   const [recommendations, setRecommendations] = useState<
     Array<Fund & { score: number }>
@@ -154,6 +164,7 @@ function FinoraDashboardContent() {
   }, []);
 
   const applyRecommendation = useCallback((data: RecommendationResponse) => {
+    setRecommendationTarget(Number(data.desired_income));
     const funds = data.recommendations.map((fund) => ({
       name: fund.name,
       ticker: fund.ticker,
@@ -235,6 +246,7 @@ function FinoraDashboardContent() {
       if (!response.ok) throw new Error();
       setPlannerFunds([]);
       setRecommendations([]);
+      setRecommendationTarget(null);
       setRefreshingTickers([]);
       setIsProcessing(false);
       await loadDashboard();
@@ -248,7 +260,8 @@ function FinoraDashboardContent() {
 
   const summary = dashboard.summary;
   const monthlyIncome = Number(summary.monthly_income);
-  const incomeTarget = Number(summary.income_target);
+  const incomeTarget = recommendationTarget ?? Number(summary.income_target);
+  const remainingToTarget = Math.max(0, incomeTarget - monthlyIncome);
   const targetProgress =
     incomeTarget > 0 ? Math.min(100, (monthlyIncome / incomeTarget) * 100) : 0;
   const totalReturn = Number(summary.total_return_percentage);
@@ -282,7 +295,7 @@ function FinoraDashboardContent() {
               onClick={() => setActiveTab("portfolio")}
               variant={activeTab === "portfolio" ? "default" : "ghost"}
             >
-              <WalletCards className="size-4" /> Minha carteira
+              <WalletCards className="size-4" /> Visão geral
             </Button>
             <Button
               className={
@@ -294,6 +307,17 @@ function FinoraDashboardContent() {
               variant={activeTab === "planner" ? "default" : "ghost"}
             >
               <Calculator className="size-4" /> Planejador de renda
+            </Button>
+            <Button
+              className={
+                activeTab === "contributions"
+                  ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
+                  : "text-zinc-300 hover:bg-[#302e67] hover:text-white"
+              }
+              onClick={() => setActiveTab("contributions")}
+              variant={activeTab === "contributions" ? "default" : "ghost"}
+            >
+              <TrendingUp className="size-4" /> Planejador de aportes
             </Button>
           </div>
 
@@ -318,11 +342,7 @@ function FinoraDashboardContent() {
               <DashboardMetricCard
                 icon={Clock3}
                 label="Falta para a meta"
-                value={
-                  incomeTarget > 0
-                    ? money.format(Number(summary.remaining_to_target))
-                    : "—"
-                }
+                value={incomeTarget > 0 ? money.format(remainingToTarget) : "—"}
                 hint={
                   incomeTarget > 0
                     ? `${Math.round(100 - targetProgress)}% para alcançar a meta`
@@ -629,6 +649,14 @@ function FinoraDashboardContent() {
             onChangeIncome={setDesiredIncome}
             onCalculate={() => void handleCalculate()}
             onClearCache={() => void clearCache()}
+          />
+          <MonthlyContributionPlan
+            funds={recommendations}
+            holdings={dashboard.highlights}
+            incomeTarget={incomeTarget}
+            monthlyIncome={monthlyIncome}
+            open={activeTab === "contributions"}
+            totalInvested={Number(summary.total_invested)}
           />
         </div>
       </section>
