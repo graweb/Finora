@@ -36,7 +36,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ActionTooltip } from "./action-tooltip";
 import { DashboardMetricCard } from "./dashboard-metric-card";
 import { PageHeader } from "./page-header";
-import { money } from "./dashboard-types";
+import { formatDate, money } from "./dashboard-types";
 import { FundSearchCombobox } from "./fund-search-combobox";
 import { PortfolioDividends } from "./portfolio-dividends";
 import {
@@ -112,9 +112,6 @@ const createEmptyForm = (): TransactionForm => ({
   unitPrice: 0,
   occurredOn: "",
 });
-const formatDate = (value: string) =>
-  new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
-
 function Modal({
   title,
   children,

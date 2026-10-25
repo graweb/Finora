@@ -29,7 +29,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ActionTooltip } from "./action-tooltip";
-import { currency } from "./dashboard-types";
+import { money } from "./dashboard-types";
 import {
   matchesTableColumnFilter,
   TableColumnFilter,
@@ -173,7 +173,7 @@ function Metric({
     <div className="min-w-0 px-3 first:pl-0 last:pr-0">
       <p className="text-xs text-zinc-400">{label}</p>
       <p className={`truncate pt-1 text-lg font-semibold lg:text-2xl ${color}`}>
-        {currency.format(value)}
+        {money.format(value)}
       </p>
     </div>
   );
@@ -1091,13 +1091,13 @@ function AccountRow({
         </td>
         <td className="px-3 py-4 text-zinc-200">{date(account.due_on)}</td>
         <td className="px-3 py-4 text-right text-zinc-100">
-          {currency.format(account.original_amount)}
+          {money.format(account.original_amount)}
         </td>
         <td className="px-3 py-4 text-right text-zinc-100">
-          {currency.format(account.paid_amount)}
+          {money.format(account.paid_amount)}
         </td>
         <td className="px-3 py-4 text-right font-medium text-white">
-          {currency.format(account.outstanding_amount)}
+          {money.format(account.outstanding_amount)}
         </td>
         <td className="px-3 py-4">
           <span
@@ -1137,7 +1137,7 @@ function AccountRow({
                           ? "recebido"
                           : "realizado"}{" "}
                         · {date(settlement.occurred_on)} ·{" "}
-                        {currency.format(settlement.amount)}
+                        {money.format(settlement.amount)}
                       </li>
                     ))}
                   </ul>
@@ -1184,12 +1184,12 @@ function AccountDetails({
       <div className="mt-5 space-y-3 border-t border-[#39386a] pt-4 text-sm">
         <Row
           label="Valor original"
-          value={currency.format(account.original_amount)}
+          value={money.format(account.original_amount)}
         />
-        <Row label="Pago" value={currency.format(account.paid_amount)} />
+        <Row label="Pago" value={money.format(account.paid_amount)} />
         <Row
           label="Saldo devedor"
-          value={currency.format(account.outstanding_amount)}
+          value={money.format(account.outstanding_amount)}
           emphasis
         />
       </div>
@@ -1365,7 +1365,7 @@ function SettlementModal({
         <p className="text-sm text-zinc-400">
           Saldo atual:{" "}
           <span className="font-medium text-white">
-            {currency.format(account.outstanding_amount)}
+            {money.format(account.outstanding_amount)}
           </span>
         </p>
         <Field label="Valor">

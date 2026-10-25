@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   BarChart3,
@@ -27,15 +27,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
-import { AllocationBars, SectorDonut } from "./allocation-charts";
 import { DashboardMetricCard } from "./dashboard-metric-card";
-import { money, type Fund } from "./dashboard-types";
+import { money, percent, type Fund } from "./dashboard-types";
 import { DashboardNavigation } from "./dashboard-navigation";
 import { PageHeader } from "./page-header";
-import { FundRecommendations } from "./fund-recommendations";
-import { FundTable } from "./fund-table";
-import { IncomeTargetForm } from "./income-target-form";
-import { RecommendationProgress } from "./recommendation-progress";
+import { IncomePlanner } from "./income-planner";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -72,6 +68,7 @@ type PortfolioDashboard = {
 };
 
 type RecommendationResponse = {
+  desired_income: number | string;
   required_capital: number | string | null;
   annual_yield: number | string | null;
   monthly_yield: number | string | null;
@@ -107,120 +104,6 @@ const chartConfig = {
   invested_amount: { label: "Valor investido", color: "#38bdf8" },
   market_value: { label: "Valor atual", color: "#a78bfa" },
 };
-
-function percent(value: number) {
-  return `${(value * 100).toLocaleString("pt-BR", {
-    maximumFractionDigits: 2,
-  })}%`;
-}
-
-function PlannerTab({
-  open,
-  desiredIncome,
-  isClearingCache,
-  isProcessing,
-  progress,
-  remainingFunds,
-  capital,
-  annualYield,
-  monthlyYield,
-  funds,
-  recommendations,
-  onChangeIncome,
-  onCalculate,
-  onClearCache,
-}: {
-  open: boolean;
-  desiredIncome: number;
-  isClearingCache: boolean;
-  isProcessing: boolean;
-  progress: number;
-  remainingFunds: number;
-  capital: number;
-  annualYield: number;
-  monthlyYield: number;
-  funds: Fund[];
-  recommendations: Array<Fund & { score: number }>;
-  onChangeIncome: (value: number) => void;
-  onCalculate: () => void;
-  onClearCache: () => void;
-}) {
-  const sectors = useMemo(
-    () =>
-      Object.entries(
-        funds.reduce<Record<string, number>>(
-          (result, fund) => ({
-            ...result,
-            [fund.sector]: (result[fund.sector] || 0) + fund.weight,
-          }),
-          {},
-        ),
-      ).sort((first, second) => second[1] - first[1]),
-    [funds],
-  );
-  const isReady = funds.length > 0 && annualYield > 0 && monthlyYield > 0;
-
-  if (!open) return null;
-
-  return (
-    <div className="mt-5">
-      <div>
-        <IncomeTargetForm
-          isClearingCache={isClearingCache}
-          value={desiredIncome}
-          onCalculate={onCalculate}
-          onChange={onChangeIncome}
-          onClearCache={onClearCache}
-        />
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="min-w-0">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <DashboardMetricCard
-                icon={CircleDollarSign}
-                label="Renda desejada"
-                value={money.format(desiredIncome)}
-                hint="por mês"
-              />
-              <DashboardMetricCard
-                icon={WalletCards}
-                label="Capital necessário"
-                value={isReady ? money.format(capital) : "—"}
-                hint="para atingir a meta"
-              />
-              <DashboardMetricCard
-                icon={Percent}
-                label="Yield da carteira"
-                value={isReady ? `${percent(annualYield)} a.a.` : "—"}
-                hint={
-                  isReady
-                    ? `${percent(monthlyYield)} ao mês`
-                    : "complete os dados"
-                }
-              />
-            </div>
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              {isReady ? (
-                <AllocationBars capital={capital} funds={funds} />
-              ) : null}
-              {isReady ? <SectorDonut sectors={sectors} /> : null}
-            </div>
-            <div className="mt-4">
-              <FundTable capital={capital} funds={funds} />
-            </div>
-          </section>
-          <aside>
-            <RecommendationProgress
-              isProcessing={isProcessing}
-              progress={progress}
-              remainingFunds={remainingFunds}
-            />
-            <FundRecommendations funds={recommendations} />
-          </aside>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function FinoraDashboard() {
   return (
@@ -270,17 +153,6 @@ function FinoraDashboardContent() {
     }
   }, []);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadDashboard(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadDashboard]);
-
-  useEffect(() => {
-    if (dashboard.refreshing_tickers.length === 0) return;
-    const timer = window.setTimeout(() => void loadDashboard(), 3000);
-    return () => window.clearTimeout(timer);
-  }, [dashboard.refreshing_tickers.length, loadDashboard]);
-
   const applyRecommendation = useCallback((data: RecommendationResponse) => {
     const funds = data.recommendations.map((fund) => ({
       name: fund.name,
@@ -305,6 +177,34 @@ function FinoraDashboardContent() {
     setRefreshingTickers(data.refreshing_tickers);
     setIsProcessing(data.refreshing_tickers.length > 0);
   }, []);
+
+  const loadCachedRecommendation = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${apiUrl}/investment-funds/recommendations/cached`,
+      );
+      if (response.status === 404) return;
+      if (!response.ok) throw new Error();
+      const recommendation = (await response.json()) as RecommendationResponse;
+      setDesiredIncome(Number(recommendation.desired_income));
+      applyRecommendation(recommendation);
+    } catch {
+      // The planner remains available when Redis is unavailable or empty.
+    }
+  }, [applyRecommendation]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void Promise.all([loadDashboard(), loadCachedRecommendation()]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadCachedRecommendation, loadDashboard]);
+
+  useEffect(() => {
+    if (dashboard.refreshing_tickers.length === 0) return;
+    const timer = window.setTimeout(() => void loadDashboard(), 3000);
+    return () => window.clearTimeout(timer);
+  }, [dashboard.refreshing_tickers.length, loadDashboard]);
 
   const handleCalculate = useCallback(async () => {
     setIsProcessing(true);
@@ -708,7 +608,7 @@ function FinoraDashboardContent() {
               </CardContent>
             </Card>
           </div>
-          <PlannerTab
+          <IncomePlanner
             open={activeTab === "planner"}
             desiredIncome={desiredIncome}
             isClearingCache={isClearingCache}

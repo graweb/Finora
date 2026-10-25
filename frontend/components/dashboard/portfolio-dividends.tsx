@@ -9,11 +9,9 @@ import {
 } from "react";
 import {
   BarChart3,
-  CalendarDays,
   RefreshCw,
   ReceiptText,
   SlidersHorizontal,
-  Target,
 } from "lucide-react";
 import { NumericFormat } from "react-number-format";
 import { toast } from "sonner";
@@ -42,7 +40,7 @@ import {
 } from "./table-column-filter";
 import { TablePagination } from "./table-pagination";
 import { YearSelect } from "./year-select";
-import { currency } from "./dashboard-types";
+import { formatDate, money } from "./dashboard-types";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -72,8 +70,6 @@ type DividendFilterKey =
   | "calculated"
   | "adjustment"
   | "total";
-const dateLabel = (value: string) =>
-  new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
 
 export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
   const [dividends, setDividends] = useState<DividendResponse>({
@@ -320,13 +316,13 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
         <MetricCard
           icon={ReceiptText}
           label="Recebido no ano"
-          value={currency.format(totalReceived)}
+          value={money.format(totalReceived)}
           hint={`${dividends.totals.total_records} evento(s) calculado(s)`}
         />
         <MetricCard
           icon={BarChart3}
           label="Média mensal"
-          value={currency.format(totalReceived / 12)}
+          value={money.format(totalReceived / 12)}
           hint="proventos calculados"
         />
       </div>
@@ -446,26 +442,26 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
                       <p className="font-semibold text-white">{item.ticker}</p>
                       <p className="text-xs text-zinc-400">{item.fund_name}</p>
                     </td>
-                    <td className="px-4 py-3">{dateLabel(item.ex_date)}</td>
+                    <td className="px-4 py-3">{formatDate(item.ex_date)}</td>
                     <td className="px-4 py-3">
-                      {dateLabel(item.payment_date)}
+                      {formatDate(item.payment_date)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {currency.format(Number(item.amount_per_share))}
+                      {money.format(Number(item.amount_per_share))}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {item.eligible_quantity}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {currency.format(Number(item.calculated_amount))}
+                      {money.format(Number(item.calculated_amount))}
                     </td>
                     <td className="px-4 py-3 text-right text-amber-200">
                       {Number(item.adjustment_amount) === 0
                         ? "—"
-                        : currency.format(Number(item.adjustment_amount))}
+                        : money.format(Number(item.adjustment_amount))}
                     </td>
                     <td className="px-5 py-3 text-right font-semibold text-emerald-300">
-                      {currency.format(Number(item.total_amount))}
+                      {money.format(Number(item.total_amount))}
                     </td>
                   </tr>
                 ))}
@@ -496,7 +492,7 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
             <AlertDialogTitle>Ajuste excepcional de dividendo</AlertDialogTitle>
             <AlertDialogDescription>
               {adjusting
-                ? `${adjusting.ticker} · pagamento em ${dateLabel(adjusting.payment_date)}. Informe apenas a diferença em relação ao valor calculado.`
+                ? `${adjusting.ticker} · pagamento em ${formatDate(adjusting.payment_date)}. Informe apenas a diferença em relação ao valor calculado.`
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>

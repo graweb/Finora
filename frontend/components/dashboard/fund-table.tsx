@@ -1,6 +1,6 @@
 import { BriefcaseBusiness } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { currency, type Fund } from "./dashboard-types";
+import { money, type Fund } from "./dashboard-types";
 
 export function FundTable({
   capital,
@@ -55,7 +55,7 @@ export function FundTable({
                 </span>
                 <span className="text-zinc-100">{quantity} cotas</span>
                 <span className="text-right text-zinc-100">
-                  {currency.format(investedAmount)}
+                  {money.format(investedAmount)}
                 </span>
               </div>
             );

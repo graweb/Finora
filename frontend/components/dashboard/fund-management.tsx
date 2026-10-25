@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { currency } from "./dashboard-types";
+import { money } from "./dashboard-types";
 import {
   matchesTableColumnFilter,
   TableColumnFilter,
@@ -729,7 +729,7 @@ export function FundManagement() {
                       <td className="px-4 py-3 text-right text-white">
                         {fund.latest_price === null
                           ? "—"
-                          : currency.format(fund.latest_price)}
+                          : money.format(fund.latest_price)}
                       </td>
                       <td className="px-4 py-3 text-right text-zinc-200">
                         {fund.annual_dividend_yield === null

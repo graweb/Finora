@@ -24,9 +24,12 @@ export const money = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
-export const currency = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+export function percent(value: number) {
+  return `${(value * 100).toLocaleString("pt-BR", {
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+export function formatDate(value: string) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
+}
