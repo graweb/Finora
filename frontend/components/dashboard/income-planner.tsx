@@ -11,7 +11,6 @@ import { RecommendationProgress } from "./recommendation-progress";
 type IncomePlannerProps = {
   open: boolean;
   desiredIncome: number;
-  isClearingCache: boolean;
   isProcessing: boolean;
   progress: number;
   remainingFunds: number;
@@ -22,13 +21,11 @@ type IncomePlannerProps = {
   recommendations: Array<Fund & { score: number }>;
   onChangeIncome: (value: number) => void;
   onCalculate: () => void;
-  onClearCache: () => void;
 };
 
 export function IncomePlanner({
   open,
   desiredIncome,
-  isClearingCache,
   isProcessing,
   progress,
   remainingFunds,
@@ -39,7 +36,6 @@ export function IncomePlanner({
   recommendations,
   onChangeIncome,
   onCalculate,
-  onClearCache,
 }: IncomePlannerProps) {
   const sectors = useMemo(
     () =>
@@ -61,11 +57,9 @@ export function IncomePlanner({
   return (
     <div className="mt-5">
       <IncomeTargetForm
-        isClearingCache={isClearingCache}
         value={desiredIncome}
         onCalculate={onCalculate}
         onChange={onChangeIncome}
-        onClearCache={onClearCache}
       />
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0">

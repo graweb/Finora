@@ -7,14 +7,10 @@ export function IncomeTargetForm({
   value,
   onChange,
   onCalculate,
-  onClearCache,
-  isClearingCache,
 }: {
   value: number;
   onChange: (value: number) => void;
   onCalculate: () => void;
-  onClearCache: () => void;
-  isClearingCache: boolean;
 }) {
   return (
     <Card className="border-[#4b4990] bg-[#26245b] py-0 shadow-none">
@@ -48,15 +44,6 @@ export function IncomeTargetForm({
             onClick={onCalculate}
           >
             Calcular
-          </Button>
-          <Button
-            type="button"
-            disabled={isClearingCache}
-            variant="outline"
-            className="border-zinc-600 bg-zinc-900 text-white hover:bg-zinc-800"
-            onClick={onClearCache}
-          >
-            {isClearingCache ? "Limpando..." : "Limpar cache"}
           </Button>
         </div>
       </CardContent>

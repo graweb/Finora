@@ -18,6 +18,7 @@ _REFRESH_PREFIX = "finora:fii:refresh:"
 _SYNC_JOB_PREFIX = "finora:fii:sync-job:"
 _RECOMMENDATION_KEY = "finora:recommendations:latest"
 _PORTFOLIO_DASHBOARD_KEY = "finora:portfolio-dashboard"
+_INTEGRATION_SYNC_HISTORY_KEY = "finora:integrations:sync-history"
 _SYNC_JOB_TTL_SECONDS = 3600
 
 
@@ -210,6 +211,16 @@ def clear_fund_cache() -> int:
         raise FundCacheError("Não foi possível limpar o cache dos FIIs.") from error
 
 
+def clear_cached_funds() -> int:
+    """Remove only cached FII quotes, preserving planner and dashboard caches."""
+    try:
+        redis = get_redis_client()
+        keys = list(redis.scan_iter(match=f"{_CACHE_PREFIX}*"))
+        return redis.delete(*keys) if keys else 0
+    except RedisError as error:
+        raise FundCacheError("Não foi possível limpar o cache dos FIIs.") from error
+
+
 def cache_recommendation(payload: dict[str, object]) -> None:
     try:
         get_redis_client().setex(
@@ -244,6 +255,41 @@ def clear_recommendation_cache() -> None:
         get_redis_client().delete(_RECOMMENDATION_KEY)
     except RedisError:
         logger.warning("Redis is unavailable while clearing FII recommendations")
+
+
+def get_integration_cache_status() -> dict[str, object]:
+    """Return the operational data displayed by the integrations settings page."""
+    try:
+        redis = get_redis_client()
+        redis.ping()
+        fund_keys = list(redis.scan_iter(match=f"{_CACHE_PREFIX}*"))
+        history_raw = redis.lrange(_INTEGRATION_SYNC_HISTORY_KEY, 0, 4)
+        history = [json.loads(item) for item in history_raw]
+        return {
+            "redis_online": True,
+            "cached_funds": len(fund_keys),
+            "fund_cache_ttl": max(0, redis.ttl(fund_keys[0])) if fund_keys else 0,
+            "recommendation_ttl": max(0, redis.ttl(_RECOMMENDATION_KEY)),
+            "history": history,
+        }
+    except (RedisError, TypeError, ValueError, json.JSONDecodeError):
+        return {
+            "redis_online": False,
+            "cached_funds": 0,
+            "fund_cache_ttl": 0,
+            "recommendation_ttl": 0,
+            "history": [],
+        }
+
+
+def append_integration_sync_history(entry: dict[str, object]) -> None:
+    try:
+        redis = get_redis_client()
+        redis.lpush(_INTEGRATION_SYNC_HISTORY_KEY, json.dumps(entry))
+        redis.ltrim(_INTEGRATION_SYNC_HISTORY_KEY, 0, 19)
+        redis.expire(_INTEGRATION_SYNC_HISTORY_KEY, 60 * 60 * 24 * 30)
+    except RedisError:
+        logger.warning("Redis is unavailable while recording crawler synchronization history")
 
 
 def cache_portfolio_dashboard(payload: dict[str, object]) -> None:

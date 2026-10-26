@@ -364,7 +364,7 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
                     <TableColumnFilterButton
                       align="right"
                       filter={columnFilters.amountPerShare}
-                      kind="number"
+                      kind="currency"
                       label="Valor/cota"
                       onChange={(filter) =>
                         updateColumnFilter("amountPerShare", filter)
@@ -375,7 +375,7 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
                     <TableColumnFilterButton
                       align="right"
                       filter={columnFilters.quantity}
-                      kind="number"
+                      kind="currency"
                       label="Cotas elegíveis"
                       onChange={(filter) =>
                         updateColumnFilter("quantity", filter)
@@ -386,7 +386,7 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
                     <TableColumnFilterButton
                       align="right"
                       filter={columnFilters.calculated}
-                      kind="number"
+                      kind="currency"
                       label="Calculado"
                       onChange={(filter) =>
                         updateColumnFilter("calculated", filter)
@@ -397,7 +397,7 @@ export function PortfolioDividends({ tabs }: { tabs: ReactNode }) {
                     <TableColumnFilterButton
                       align="right"
                       filter={columnFilters.adjustment}
-                      kind="number"
+                      kind="currency"
                       label="Ajuste"
                       onChange={(filter) =>
                         updateColumnFilter("adjustment", filter)

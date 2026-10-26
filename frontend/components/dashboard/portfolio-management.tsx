@@ -496,7 +496,7 @@ function PortfolioManagementContent() {
                       <TableColumnFilterButton
                         align="right"
                         filter={columnFilters.quantity}
-                        kind="number"
+                        kind="currency"
                         label="Quantidade total"
                         onChange={(filter) =>
                           updateColumnFilter("quantity", filter)
@@ -609,7 +609,7 @@ function PortfolioManagementContent() {
                                         <TableColumnFilterButton
                                           align="right"
                                           filter={transactionFilters.quantity}
-                                          kind="number"
+                                          kind="currency"
                                           label="Quantidade"
                                           onChange={(filter) =>
                                             updateTransactionFilter(
@@ -623,7 +623,7 @@ function PortfolioManagementContent() {
                                         <TableColumnFilterButton
                                           align="right"
                                           filter={transactionFilters.unitPrice}
-                                          kind="number"
+                                          kind="currency"
                                           label="Valor unitário"
                                           onChange={(filter) =>
                                             updateTransactionFilter(

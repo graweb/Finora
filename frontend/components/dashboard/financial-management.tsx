@@ -857,7 +857,7 @@ function FinancialManagementContent() {
                         <TableColumnFilterButton
                           align="right"
                           filter={columnFilters.originalAmount}
-                          kind="number"
+                          kind="currency"
                           label="Valor original"
                           onChange={(filter) =>
                             updateColumnFilter("originalAmount", filter)
@@ -868,7 +868,7 @@ function FinancialManagementContent() {
                         <TableColumnFilterButton
                           align="right"
                           filter={columnFilters.paidAmount}
-                          kind="number"
+                          kind="currency"
                           label="Pago"
                           onChange={(filter) =>
                             updateColumnFilter("paidAmount", filter)
@@ -879,7 +879,7 @@ function FinancialManagementContent() {
                         <TableColumnFilterButton
                           align="right"
                           filter={columnFilters.outstandingAmount}
-                          kind="number"
+                          kind="currency"
                           label="Saldo"
                           onChange={(filter) =>
                             updateColumnFilter("outstandingAmount", filter)

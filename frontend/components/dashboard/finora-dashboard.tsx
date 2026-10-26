@@ -33,6 +33,7 @@ import { MonthlyContributionPlan } from "./monthly-contribution-plan";
 import { PageHeader } from "./page-header";
 import { IncomePlanner } from "./income-planner";
 import { useSidebarTabReset } from "./sidebar-tab-reset";
+import { recommendationCacheClearedEvent } from "./cache-events";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -139,7 +140,6 @@ function FinoraDashboardContent() {
   });
   const [refreshingTickers, setRefreshingTickers] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -202,6 +202,20 @@ function FinoraDashboardContent() {
   }, [loadCachedRecommendation, loadDashboard]);
 
   useEffect(() => {
+    const clearPlanner = () => {
+      setPlannerFunds([]);
+      setRecommendations([]);
+      setRecommendationTarget(null);
+      setRefreshingTickers([]);
+      setIsProcessing(false);
+      setDesiredIncome(100);
+    };
+    window.addEventListener(recommendationCacheClearedEvent, clearPlanner);
+    return () =>
+      window.removeEventListener(recommendationCacheClearedEvent, clearPlanner);
+  }, []);
+
+  useEffect(() => {
     if (dashboard.refreshing_tickers.length === 0) return;
     const timer = window.setTimeout(() => void loadDashboard(), 3000);
     return () => window.clearTimeout(timer);
@@ -226,27 +240,6 @@ function FinoraDashboardContent() {
     const timer = window.setTimeout(() => void handleCalculate(), 2500);
     return () => window.clearTimeout(timer);
   }, [handleCalculate, isProcessing, refreshingTickers.length]);
-
-  const clearCache = async () => {
-    setIsClearingCache(true);
-    try {
-      const response = await fetch(`${apiUrl}/investment-funds/cache`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw new Error();
-      setPlannerFunds([]);
-      setRecommendations([]);
-      setRecommendationTarget(null);
-      setRefreshingTickers([]);
-      setIsProcessing(false);
-      await loadDashboard();
-      toast.success("Cache limpo com sucesso.");
-    } catch {
-      toast.error("Não foi possível limpar o cache.");
-    } finally {
-      setIsClearingCache(false);
-    }
-  };
 
   const summary = dashboard.summary;
   const monthlyIncome = Number(summary.monthly_income);
@@ -621,7 +614,6 @@ function FinoraDashboardContent() {
           <IncomePlanner
             open={activeTab === "planner"}
             desiredIncome={desiredIncome}
-            isClearingCache={isClearingCache}
             isProcessing={isProcessing}
             progress={
               isProcessing
@@ -638,7 +630,6 @@ function FinoraDashboardContent() {
             recommendations={recommendations}
             onChangeIncome={setDesiredIncome}
             onCalculate={() => void handleCalculate()}
-            onClearCache={() => void clearCache()}
           />
           <MonthlyContributionPlan
             funds={recommendations}

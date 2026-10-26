@@ -2,6 +2,7 @@
 
 import { Filter, X } from "lucide-react";
 import { useState } from "react";
+import { NumericFormat } from "react-number-format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ export type TableColumnFilter = {
   endValue: string;
 };
 
-export type TableFilterKind = "text" | "number" | "date";
+export type TableFilterKind = "text" | "number" | "currency" | "date";
 
 type TableColumnFilterButtonProps = {
   label: string;
@@ -51,6 +52,46 @@ function inputType(kind: TableFilterKind) {
   if (kind === "number") return "number";
   if (kind === "date") return "date";
   return "text";
+}
+
+function FilterValueInput({
+  kind,
+  value,
+  onChange,
+}: {
+  kind: TableFilterKind;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (kind === "currency") {
+    return (
+      <NumericFormat
+        allowNegative
+        className="border-zinc-700 bg-zinc-900 text-left text-white"
+        customInput={Input}
+        decimalScale={2}
+        decimalSeparator=","
+        fixedDecimalScale
+        inputMode="decimal"
+        prefix="R$ "
+        thousandSeparator="."
+        value={value}
+        onValueChange={({ floatValue }) =>
+          onChange(floatValue?.toString() ?? "")
+        }
+      />
+    );
+  }
+
+  return (
+    <Input
+      className="border-zinc-700 bg-zinc-900 text-left text-white"
+      placeholder={kind === "text" ? "Informe o valor" : undefined}
+      type={inputType(kind)}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
 }
 
 export function TableColumnFilterButton({
@@ -97,8 +138,8 @@ export function TableColumnFilterButton({
       </span>
 
       {open ? (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/75 p-4">
-          <Card className="w-full max-w-md border-zinc-700 bg-[#18181b] py-0 shadow-2xl">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/75 p-4 text-left">
+          <Card className="w-full max-w-md border-zinc-700 bg-[#18181b] py-0 text-left shadow-2xl">
             <CardContent className="p-5">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -125,7 +166,7 @@ export function TableColumnFilterButton({
                 <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
                   Condição
                   <select
-                    className="h-10 rounded-lg border border-zinc-700 bg-zinc-900 px-3 text-sm text-white outline-none focus:border-sky-400"
+                    className="h-10 rounded-lg border border-zinc-700 bg-zinc-900 px-3 text-left text-sm text-white outline-none focus:border-sky-400"
                     value={draft.operator}
                     onChange={(event) =>
                       setDraft({
@@ -150,30 +191,20 @@ export function TableColumnFilterButton({
                 >
                   <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
                     {hasRange ? "De" : "Valor"}
-                    <Input
-                      className="border-zinc-700 bg-zinc-900 text-white"
-                      placeholder={
-                        kind === "text" ? "Informe o valor" : undefined
-                      }
-                      type={inputType(kind)}
+                    <FilterValueInput
+                      kind={kind}
                       value={draft.value}
-                      onChange={(event) =>
-                        setDraft({ ...draft, value: event.target.value })
-                      }
+                      onChange={(value) => setDraft({ ...draft, value })}
                     />
                   </label>
                   {hasRange ? (
                     <label className="grid gap-1.5 text-sm font-medium text-zinc-200">
                       Até
-                      <Input
-                        className="border-zinc-700 bg-zinc-900 text-white"
-                        placeholder={
-                          kind === "text" ? "Informe o valor" : undefined
-                        }
-                        type={inputType(kind)}
+                      <FilterValueInput
+                        kind={kind}
                         value={draft.endValue}
-                        onChange={(event) =>
-                          setDraft({ ...draft, endValue: event.target.value })
+                        onChange={(value) =>
+                          setDraft({ ...draft, endValue: value })
                         }
                       />
                     </label>
@@ -210,7 +241,7 @@ export function TableColumnFilterButton({
 }
 
 function normalize(value: unknown, kind: TableFilterKind): string | number {
-  if (kind === "number") return Number(value);
+  if (kind === "number" || kind === "currency") return Number(value);
   if (kind === "date") return new Date(`${String(value)}T12:00:00`).getTime();
   return String(value).trim().toLocaleLowerCase("pt-BR");
 }

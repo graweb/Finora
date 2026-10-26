@@ -669,7 +669,7 @@ export function FundManagement({ embedded = false }: { embedded?: boolean }) {
                     <TableColumnFilterButton
                       align="right"
                       filter={columnFilters.price}
-                      kind="number"
+                      kind="currency"
                       label="Último preço"
                       onChange={(filter) => updateColumnFilter("price", filter)}
                     />

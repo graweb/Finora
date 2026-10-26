@@ -259,7 +259,7 @@ export function MonthlyContributionPlan({
                             {fund.ticker}
                             {gap >= 0.08 ? (
                               <span className="ml-2 rounded-full border border-rose-400/40 bg-rose-400/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-200">
-                                Prioridade alta
+                                Prioridade
                               </span>
                             ) : null}
                           </td>
