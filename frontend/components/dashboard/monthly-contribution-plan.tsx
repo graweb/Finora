@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CirclePlus, Coins, Target, TrendingUp } from "lucide-react";
 import {
   Area,
@@ -14,6 +14,8 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NumericFormat } from "react-number-format";
 import {
   Card,
   CardContent,
@@ -30,7 +32,7 @@ import {
 import { DashboardMetricCard } from "./dashboard-metric-card";
 import { money, percent, sectorColors, type Fund } from "./dashboard-types";
 
-const contributionAmount = 2000;
+const defaultContributionAmount = 2000;
 const contributionChartConfig = {
   percent: {
     label: "Distribuição",
@@ -65,6 +67,9 @@ export function MonthlyContributionPlan({
   monthlyIncome,
   incomeTarget,
 }: MonthlyContributionPlanProps) {
+  const [contributionAmount, setContributionAmount] = useState(
+    defaultContributionAmount,
+  );
   const plan = useMemo(() => {
     const holdingsByTicker = new Map(
       holdings.map((holding) => [holding.ticker, holding]),
@@ -84,20 +89,17 @@ export function MonthlyContributionPlan({
         (first, second) =>
           second.gap - first.gap || second.fund.score - first.fund.score,
       )
-      .slice(0, 5);
+      .slice(0, 10);
     const totalGap = candidates.reduce((total, item) => total + item.gap, 0);
     const suggestions = candidates.map((item) => {
       const budget =
         totalGap > 0
           ? contributionAmount * (item.gap / totalGap)
           : contributionAmount / Math.max(candidates.length, 1);
-      const quantity = Math.max(
-        1,
-        Math.floor(budget / item.fund.referencePrice),
-      );
+      const quantity = Math.floor(budget / item.fund.referencePrice);
       const total = quantity * item.fund.referencePrice;
       return { ...item, quantity, total };
-    });
+    }).filter((item) => item.quantity > 0);
     const plannedIncome = suggestions.reduce(
       (total, item) =>
         total +
@@ -119,7 +121,7 @@ export function MonthlyContributionPlan({
       .map(([sector, amount]) => ({
         sector,
         amount,
-        percent: (amount / contributionAmount) * 100,
+        percent: contributionAmount > 0 ? (amount / contributionAmount) * 100 : 0,
       }))
       .sort((first, second) => second.amount - first.amount);
     const progression = Array.from({ length: 8 }, (_, index) => ({
@@ -137,7 +139,7 @@ export function MonthlyContributionPlan({
     }));
 
     return { suggestions, plannedIncome, distribution, progression };
-  }, [funds, holdings, monthlyIncome, totalInvested]);
+  }, [contributionAmount, funds, holdings, monthlyIncome, totalInvested]);
 
   if (!open) return null;
 
@@ -154,26 +156,36 @@ export function MonthlyContributionPlan({
             Aportes de outubro
           </h2>
           <p className="mt-1 text-sm text-zinc-400">
-            Invista {money.format(contributionAmount)} este mês para aproximar
-            sua carteira da meta.
+            Informe o aporte do mês para recalcular as compras sugeridas.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="grid gap-1 text-xs text-zinc-400">
+            Aporte disponível
+            <NumericFormat
+              allowNegative={false}
+              aria-label="Aporte disponível"
+              className="h-10 w-43 border-[#4a4880] bg-[#222153] text-sm font-medium text-white"
+              customInput={Input}
+              decimalScale={2}
+              decimalSeparator=","
+              fixedDecimalScale
+              inputMode="decimal"
+              prefix="R$ "
+              thousandSeparator="."
+              value={contributionAmount}
+              onValueChange={({ floatValue }) =>
+                setContributionAmount(Math.max(0, floatValue ?? 0))
+              }
+            />
+          </label>
           <select
             aria-label="Mês do aporte"
-            className="h-10 rounded-lg border border-[#4a4880] bg-[#222153] px-3 text-sm text-zinc-100 outline-none"
+            className="h-10 self-end rounded-lg border border-[#4a4880] bg-[#222153] px-3 text-sm text-zinc-100 outline-none"
             defaultValue="2026-10"
           >
             <option value="2026-10">Outubro 2026</option>
           </select>
-          <Button
-            className="h-10 bg-sky-500 text-slate-950 hover:bg-sky-400"
-            onClick={() =>
-              toast.info("Registre as compras na aba Minha carteira.")
-            }
-          >
-            <CirclePlus className="size-4" /> Registrar aportes
-          </Button>
         </div>
       </div>
 

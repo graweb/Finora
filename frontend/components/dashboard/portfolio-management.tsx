@@ -105,12 +105,17 @@ const emptyPortfolio: PortfolioData = {
   total_pages: 1,
 };
 const tablePageSize = 10;
+const todayLocal = () => {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
+};
 const createEmptyForm = (): TransactionForm => ({
   fundId: "",
   transactionType: "buy",
   quantity: 1,
   unitPrice: 0,
-  occurredOn: "",
+  occurredOn: todayLocal(),
 });
 function Modal({
   title,
