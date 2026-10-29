@@ -11,6 +11,8 @@ import { RecommendationProgress } from "./recommendation-progress";
 type IncomePlannerProps = {
   open: boolean;
   desiredIncome: number;
+  usePortfolio: boolean;
+  portfolioMonthlyIncome: number;
   isProcessing: boolean;
   progress: number;
   remainingFunds: number;
@@ -20,12 +22,15 @@ type IncomePlannerProps = {
   funds: Fund[];
   recommendations: Array<Fund & { score: number }>;
   onChangeIncome: (value: number) => void;
+  onUsePortfolioChange: (value: boolean) => void;
   onCalculate: () => void;
 };
 
 export function IncomePlanner({
   open,
   desiredIncome,
+  usePortfolio,
+  portfolioMonthlyIncome,
   isProcessing,
   progress,
   remainingFunds,
@@ -35,6 +40,7 @@ export function IncomePlanner({
   funds,
   recommendations,
   onChangeIncome,
+  onUsePortfolioChange,
   onCalculate,
 }: IncomePlannerProps) {
   const sectors = useMemo(
@@ -51,6 +57,7 @@ export function IncomePlanner({
     [funds],
   );
   const isReady = funds.length > 0 && annualYield > 0 && monthlyYield > 0;
+  const remainingIncome = Math.max(0, desiredIncome - portfolioMonthlyIncome);
 
   if (!open) return null;
 
@@ -58,8 +65,10 @@ export function IncomePlanner({
     <div className="mt-5">
       <IncomeTargetForm
         value={desiredIncome}
+        usePortfolio={usePortfolio}
         onCalculate={onCalculate}
         onChange={onChangeIncome}
+        onUsePortfolioChange={onUsePortfolioChange}
       />
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0">
@@ -72,9 +81,15 @@ export function IncomePlanner({
             />
             <DashboardMetricCard
               icon={WalletCards}
-              label="Capital necessário"
+              label={
+                usePortfolio ? "Capital adicional necessário" : "Capital necessário"
+              }
               value={isReady ? money.format(capital) : "—"}
-              hint="para atingir a meta"
+              hint={
+                usePortfolio
+                  ? `faltam ${money.format(remainingIncome)} por mês`
+                  : "para atingir a meta"
+              }
             />
             <DashboardMetricCard
               icon={Percent}

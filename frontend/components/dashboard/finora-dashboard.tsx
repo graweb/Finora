@@ -79,6 +79,8 @@ type RecommendationResponse = {
   annual_yield: number | string | null;
   monthly_yield: number | string | null;
   refreshing_tickers: string[];
+  uses_portfolio: boolean;
+  portfolio_monthly_income: number | string;
   recommendations: Array<{
     name: string;
     ticker: string;
@@ -126,6 +128,8 @@ function FinoraDashboardContent() {
   >("portfolio");
   useSidebarTabReset(() => setActiveTab("portfolio"));
   const [desiredIncome, setDesiredIncome] = useState(100);
+  const [usePortfolio, setUsePortfolio] = useState(false);
+  const [portfolioMonthlyIncome, setPortfolioMonthlyIncome] = useState(0);
   const [recommendationTarget, setRecommendationTarget] = useState<
     number | null
   >(null);
@@ -154,6 +158,8 @@ function FinoraDashboardContent() {
   }, []);
 
   const applyRecommendation = useCallback((data: RecommendationResponse) => {
+    setUsePortfolio(data.uses_portfolio ?? false);
+    setPortfolioMonthlyIncome(Number(data.portfolio_monthly_income ?? 0));
     setRecommendationTarget(Number(data.desired_income));
     const funds = data.recommendations.map((fund) => ({
       name: fund.name,
@@ -209,6 +215,8 @@ function FinoraDashboardContent() {
       setRefreshingTickers([]);
       setIsProcessing(false);
       setDesiredIncome(100);
+      setUsePortfolio(false);
+      setPortfolioMonthlyIncome(0);
     };
     window.addEventListener(recommendationCacheClearedEvent, clearPlanner);
     return () =>
@@ -225,7 +233,7 @@ function FinoraDashboardContent() {
     setIsProcessing(true);
     try {
       const response = await fetch(
-        `${apiUrl}/investment-funds/recommendations?desired_income=${Math.max(0.01, desiredIncome).toFixed(2)}`,
+        `${apiUrl}/investment-funds/recommendations?desired_income=${Math.max(0.01, desiredIncome).toFixed(2)}&use_portfolio=${usePortfolio}`,
       );
       if (!response.ok) throw new Error();
       applyRecommendation((await response.json()) as RecommendationResponse);
@@ -233,7 +241,7 @@ function FinoraDashboardContent() {
       setIsProcessing(false);
       toast.error("Não foi possível calcular a carteira sugerida.");
     }
-  }, [applyRecommendation, desiredIncome]);
+  }, [applyRecommendation, desiredIncome, usePortfolio]);
 
   useEffect(() => {
     if (!isProcessing || refreshingTickers.length === 0) return;
@@ -614,6 +622,8 @@ function FinoraDashboardContent() {
           <IncomePlanner
             open={activeTab === "planner"}
             desiredIncome={desiredIncome}
+            usePortfolio={usePortfolio}
+            portfolioMonthlyIncome={portfolioMonthlyIncome}
             isProcessing={isProcessing}
             progress={
               isProcessing
@@ -629,6 +639,7 @@ function FinoraDashboardContent() {
             funds={plannerFunds}
             recommendations={recommendations}
             onChangeIncome={setDesiredIncome}
+            onUsePortfolioChange={setUsePortfolio}
             onCalculate={() => void handleCalculate()}
           />
           <MonthlyContributionPlan

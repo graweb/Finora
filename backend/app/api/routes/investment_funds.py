@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal, get_db
 from app.models.investment_fund import InvestmentFund
 from app.models.investment_policy import InvestmentPolicy
+from app.models.portfolio_transaction import PortfolioTransaction
 from app.services.dividend_events import upsert_dividend_events
 from app.services.fund_cache import (
     cache_fund,
@@ -101,6 +102,8 @@ class InvestmentFundRecommendationResponse(BaseModel):
     monthly_yield: Decimal | None
     recommendations: list[InvestmentFundRecommendation]
     refreshing_tickers: list[str]
+    uses_portfolio: bool = False
+    portfolio_monthly_income: Decimal = Decimal("0")
 
 
 class FundCacheClearResponse(BaseModel):
@@ -421,13 +424,52 @@ def _build_recommendations(
     return recommendations, required_capital, annual_yield, monthly_yield, uncached_tickers
 
 
+def _portfolio_monthly_income(db: Session) -> Decimal:
+    positions: dict[int, int] = {}
+    rows = db.execute(
+        select(InvestmentFund, PortfolioTransaction)
+        .join(PortfolioTransaction)
+        .order_by(PortfolioTransaction.occurred_on, PortfolioTransaction.id)
+    ).all()
+
+    funds: dict[int, InvestmentFund] = {}
+    for fund, transaction in rows:
+        funds[fund.id] = fund
+        sign = 1 if transaction.transaction_type == "buy" else -1
+        positions[fund.id] = positions.get(fund.id, 0) + sign * transaction.quantity
+
+    monthly_income = Decimal("0")
+    for fund_id, quantity in positions.items():
+        if quantity <= 0:
+            continue
+        fund = funds[fund_id]
+        cached_fund = get_cached_fund(fund.ticker)
+        latest_price = (
+            cached_fund.latest_price if cached_fund else fund.latest_price
+        ) or Decimal("0")
+        annual_yield = (
+            cached_fund.annual_dividend_yield
+            if cached_fund
+            else fund.annual_dividend_yield
+        ) or Decimal("0")
+        monthly_income += (
+            Decimal(quantity) * Decimal(latest_price) * Decimal(annual_yield) / 12
+        )
+    return monthly_income
+
+
 @router.get("/recommendations", response_model=InvestmentFundRecommendationResponse)
 def get_investment_fund_recommendations(
     background_tasks: BackgroundTasks,
     desired_income: Decimal = Query(gt=0, max_digits=12, decimal_places=2),
+    use_portfolio: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> InvestmentFundRecommendationResponse:
     funds = list(db.scalars(select(InvestmentFund).order_by(InvestmentFund.ticker)))
+    portfolio_monthly_income = (
+        _portfolio_monthly_income(db) if use_portfolio else Decimal("0")
+    )
+    income_to_plan = max(Decimal("0"), desired_income - portfolio_monthly_income)
     (
         recommendations,
         required_capital,
@@ -435,7 +477,7 @@ def get_investment_fund_recommendations(
         monthly_yield,
         uncached_tickers,
     ) = _build_recommendations(
-        funds, desired_income, get_or_create_investment_policy(db)
+        funds, income_to_plan, get_or_create_investment_policy(db)
     )
     scheduled_tickers = schedule_fund_refresh(uncached_tickers)
     if scheduled_tickers:
@@ -451,6 +493,8 @@ def get_investment_fund_recommendations(
         monthly_yield=monthly_yield,
         recommendations=recommendations,
         refreshing_tickers=refreshing_tickers,
+        uses_portfolio=use_portfolio,
+        portfolio_monthly_income=portfolio_monthly_income,
     )
     cache_recommendation(response.model_dump(mode="json"))
     clear_portfolio_dashboard_cache()

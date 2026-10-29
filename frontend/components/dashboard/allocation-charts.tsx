@@ -132,7 +132,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                   { label: item.sector, color: item.color },
                 ]),
               )}
-              className="size-44 shrink-0"
+              className="size-52 shrink-0"
             >
               <RechartsPieChart>
                 <Tooltip
