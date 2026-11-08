@@ -20,7 +20,7 @@ class FinancialAccountPayload(BaseModel):
     account_type: Literal["receivable", "payable"]
     destination: Literal["fisica", "juridica"]
     description: str = Field(min_length=1, max_length=255)
-    original_amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    original_amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     due_on: date
 
 

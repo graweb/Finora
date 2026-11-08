@@ -501,6 +501,7 @@ function FinancialManagementContent() {
 
   async function saveAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const editedAccount = editing;
     setSaving(true);
     setError("");
     try {
@@ -525,10 +526,29 @@ function FinancialManagementContent() {
           (await response.json().catch(() => null))?.detail ??
             "Não foi possível salvar a conta.",
         );
+      const savedAccount = (await response.json()) as Account;
       closeForm();
-      reload();
+      const savedDueOn = new Date(`${savedAccount.due_on}T00:00:00`);
+      const remainsInCurrentView =
+        period !== null &&
+        savedDueOn.getFullYear() === period.year &&
+        savedDueOn.getMonth() + 1 === period.month &&
+        (view === "all" || savedAccount.destination === view);
+
+      if (editedAccount && remainsInCurrentView) {
+        setData((currentData) => ({
+          ...currentData,
+          items: currentData.items.map((account) =>
+            account.id === savedAccount.id ? savedAccount : account,
+          ),
+        }));
+      } else {
+        reload();
+      }
       toast.success(
-        editing ? "Conta atualizada com sucesso." : "Conta criada com sucesso.",
+        editedAccount
+          ? "Conta atualizada com sucesso."
+          : "Conta criada com sucesso.",
       );
     } catch (reason) {
       setError(
@@ -944,7 +964,7 @@ function FinancialManagementContent() {
               </div>
               <div className="px-5 pb-4">
                 <TablePagination
-                  page={data.pagination.page}
+                  page={page}
                   totalPages={totalPages}
                   totalItems={accounts.length}
                   onPageChange={changePage}
@@ -1161,7 +1181,7 @@ function AccountDetails({
         Tipo de pessoa: <Pill destination={account.destination} />
       </div>
       <p className="mt-4 text-sm font-medium text-white">
-        {Math.round(progress)}% pago
+        {Math.round(progress ? progress : 0)}% pago
       </p>
       <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#45437a]">
         <div
