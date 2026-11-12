@@ -3,19 +3,14 @@ import { CircleDollarSign, Percent, WalletCards } from "lucide-react";
 import { AllocationBars, SectorDonut } from "./allocation-charts";
 import { DashboardMetricCard } from "./dashboard-metric-card";
 import { money, percent, type Fund } from "./dashboard-types";
-import { FundRecommendations } from "./fund-recommendations";
 import { FundTable } from "./fund-table";
 import { IncomeTargetForm } from "./income-target-form";
-import { RecommendationProgress } from "./recommendation-progress";
 
 type IncomePlannerProps = {
   open: boolean;
   desiredIncome: number;
   usePortfolio: boolean;
   portfolioMonthlyIncome: number;
-  isProcessing: boolean;
-  progress: number;
-  remainingFunds: number;
   capital: number;
   annualYield: number;
   monthlyYield: number;
@@ -31,9 +26,6 @@ export function IncomePlanner({
   desiredIncome,
   usePortfolio,
   portfolioMonthlyIncome,
-  isProcessing,
-  progress,
-  remainingFunds,
   capital,
   annualYield,
   monthlyYield,
@@ -70,7 +62,7 @@ export function IncomePlanner({
         onChange={onChangeIncome}
         onUsePortfolioChange={onUsePortfolioChange}
       />
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="mt-4">
         <section className="min-w-0">
           <div className="grid gap-4 sm:grid-cols-3">
             <DashboardMetricCard
@@ -109,17 +101,9 @@ export function IncomePlanner({
             {isReady ? <SectorDonut sectors={sectors} /> : null}
           </div>
           <div className="mt-4">
-            <FundTable capital={capital} funds={funds} />
+            <FundTable capital={capital} funds={recommendations} />
           </div>
         </section>
-        <aside>
-          <RecommendationProgress
-            isProcessing={isProcessing}
-            progress={progress}
-            remainingFunds={remainingFunds}
-          />
-          <FundRecommendations funds={recommendations} />
-        </aside>
       </div>
     </div>
   );

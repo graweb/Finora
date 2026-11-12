@@ -27,7 +27,7 @@ export function AllocationBars({
   funds: Fund[];
   capital: number;
 }) {
-  const data = funds.slice(0, 7).map((fund) => ({
+  const data = funds.slice(0, 10).map((fund) => ({
     ticker: fund.ticker.replace("11", ""),
     allocation: fund.weight * 100,
   }));
@@ -124,7 +124,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
             Sem dados
           </div>
         ) : (
-          <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
+          <div className="mt-5 flex items-center gap-6 overflow-x-auto pb-1">
             <ChartContainer
               config={Object.fromEntries(
                 data.map((item) => [
@@ -132,7 +132,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                   { label: item.sector, color: item.color },
                 ]),
               )}
-              className="size-52 shrink-0"
+              className="size-64 shrink-0"
             >
               <RechartsPieChart>
                 <Tooltip
@@ -149,9 +149,9 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                 <Pie
                   data={data}
                   dataKey="allocation"
-                  innerRadius={47}
+                  innerRadius={58}
                   nameKey="sector"
-                  outerRadius={68}
+                  outerRadius={88}
                   paddingAngle={3}
                   stroke="none"
                 >
@@ -179,7 +179,7 @@ export function SectorDonut({ sectors }: { sectors: Array<[string, number]> }) {
                 </text>
               </RechartsPieChart>
             </ChartContainer>
-            <div className="min-w-0 flex-1 space-y-3 sm:pl-2">
+            <div className="min-w-42 flex-1 space-y-3.5">
               {data.map(({ sector, allocation, color }) => (
                 <div
                   className="flex items-center justify-between gap-4 text-xs"

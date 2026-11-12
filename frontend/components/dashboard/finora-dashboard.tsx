@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Calculator,
@@ -144,6 +144,8 @@ function FinoraDashboardContent() {
   });
   const [refreshingTickers, setRefreshingTickers] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [calculationProgress, setCalculationProgress] = useState(0);
+  const calculationToastId = useRef<string | number | undefined>(undefined);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -231,23 +233,65 @@ function FinoraDashboardContent() {
 
   const handleCalculate = useCallback(async () => {
     setIsProcessing(true);
+    const progress =
+      calculationToastId.current === undefined
+        ? 15
+        : Math.max(15, 100 - refreshingTickers.length * 10);
+    setCalculationProgress(progress);
+    calculationToastId.current = toast.loading("Calculando recomendação", {
+      id: calculationToastId.current,
+      description: `Preparando sua carteira sugerida (${progress}%).`,
+    });
     try {
       const response = await fetch(
         `${apiUrl}/investment-funds/recommendations?desired_income=${Math.max(0.01, desiredIncome).toFixed(2)}&use_portfolio=${usePortfolio}`,
       );
       if (!response.ok) throw new Error();
-      applyRecommendation((await response.json()) as RecommendationResponse);
+      const recommendation = (await response.json()) as RecommendationResponse;
+      setCalculationProgress(
+        recommendation.refreshing_tickers.length > 0
+          ? Math.max(15, 100 - recommendation.refreshing_tickers.length * 10)
+          : 100,
+      );
+      applyRecommendation(recommendation);
     } catch {
       setIsProcessing(false);
+      if (calculationToastId.current !== undefined) {
+        toast.dismiss(calculationToastId.current);
+        calculationToastId.current = undefined;
+      }
       toast.error("Não foi possível calcular a carteira sugerida.");
     }
-  }, [applyRecommendation, desiredIncome, usePortfolio]);
+  }, [applyRecommendation, desiredIncome, refreshingTickers.length, usePortfolio]);
 
   useEffect(() => {
     if (!isProcessing || refreshingTickers.length === 0) return;
     const timer = window.setTimeout(() => void handleCalculate(), 2500);
     return () => window.clearTimeout(timer);
   }, [handleCalculate, isProcessing, refreshingTickers.length]);
+
+  useEffect(() => {
+    if (calculationToastId.current === undefined) return;
+
+    const progress = calculationProgress;
+
+    toast.loading("Calculando recomendação", {
+      id: calculationToastId.current,
+      description:
+        progress === 100
+          ? "Carteira sugerida pronta (100%)."
+          : `Atualizando dados para a sua carteira (${progress}%).`,
+    });
+
+    if (progress < 100) return;
+    const timer = window.setTimeout(() => {
+      if (calculationToastId.current !== undefined) {
+        toast.dismiss(calculationToastId.current);
+        calculationToastId.current = undefined;
+      }
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [calculationProgress]);
 
   const summary = dashboard.summary;
   const monthlyIncome = Number(summary.monthly_income);
@@ -624,15 +668,6 @@ function FinoraDashboardContent() {
             desiredIncome={desiredIncome}
             usePortfolio={usePortfolio}
             portfolioMonthlyIncome={portfolioMonthlyIncome}
-            isProcessing={isProcessing}
-            progress={
-              isProcessing
-                ? Math.max(15, 100 - refreshingTickers.length * 10)
-                : recommendations.length
-                  ? 100
-                  : 0
-            }
-            remainingFunds={refreshingTickers.length}
             capital={metrics.capital}
             annualYield={metrics.annualYield}
             monthlyYield={metrics.monthlyYield}
